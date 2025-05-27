@@ -7,6 +7,101 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
 import win32com.client
+import pygame
+import tempfile
+import time
+
+# 尝试导入gTTS库
+try:
+    from gtts import gTTS
+    import io
+    GTTS_AVAILABLE = True
+except ImportError:
+    GTTS_AVAILABLE = False
+    print("gTTS库未安装，将只使用系统语音")
+
+class LocalTTSThread(threading.Thread):
+    def __init__(self, text, lang, slow, callback, parent):
+        super().__init__()
+        self.text = text
+        self.lang = lang
+        self.slow = slow
+        self.callback = callback
+        self.parent = parent
+        self.is_running = True
+        self.is_paused = False
+        self.daemon = True
+        
+    def run(self):
+        try:
+            if self.is_running and GTTS_AVAILABLE:
+                # 分段朗读
+                sentences = self.split_text(self.text)
+                for sentence in sentences:
+                    if not self.is_running:
+                        break
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    if self.is_running and sentence.strip():
+                        # 生成音频文件
+                        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+                            tmp_path = tmp_file.name
+                        
+                        # 生成语音
+                        tts = gTTS(text=sentence, lang=self.lang, slow=self.slow)
+                        tts.save(tmp_path)
+                        
+                        # 播放音频
+                        if self.is_running:
+                            self.play_audio(tmp_path)
+                        
+                        # 清理临时文件
+                        try:
+                            os.unlink(tmp_path)
+                        except:
+                            pass
+                
+                if self.is_running and self.callback:
+                    self.callback()
+        except Exception as e:
+            print(f"本地TTS朗读出错: {str(e)}")
+    
+    def play_audio(self, file_path):
+        try:
+            pygame.mixer.init()
+            pygame.mixer.music.load(file_path)
+            pygame.mixer.music.play()
+            
+            # 等待播放完成
+            while pygame.mixer.music.get_busy() and self.is_running:
+                if self.is_paused:
+                    pygame.mixer.music.pause()
+                    while self.is_paused and self.is_running:
+                        time.sleep(0.1)
+                    if self.is_running:
+                        pygame.mixer.music.unpause()
+                time.sleep(0.1)
+        except Exception as e:
+            print(f"音频播放出错: {str(e)}")
+    
+    def split_text(self, text):
+        import re
+        sentences = re.split(r'[。！？\n]', text)
+        return [s.strip() + '。' for s in sentences if s.strip()]
+    
+    def pause(self):
+        self.is_paused = True
+    
+    def resume(self):
+        self.is_paused = False
+    
+    def stop(self):
+        self.is_running = False
+        self.is_paused = False
+        try:
+            pygame.mixer.music.stop()
+        except:
+            pass
 
 class TextToSpeechThread(threading.Thread):
     def __init__(self, text, voice_index, rate, callback, parent):
@@ -88,6 +183,9 @@ class EpubReader:
         self.tts_thread = None
         self.current_voice_index = 0
         self.current_rate = 0
+        self.use_local_tts = False
+        self.current_lang = 'zh'
+        self.current_slow = False
         
         # 获取可用语音
         try:
@@ -99,6 +197,20 @@ class EpubReader:
                 self.voice_names.append(voice.GetDescription())
         except:
             self.voice_names = ["默认语音"]
+        
+        # 定义可用的语言和音色
+        self.tts_languages = {
+            '中文': 'zh',
+            '英文': 'en',
+            '日文': 'ja',
+            '韩文': 'ko',
+            '法文': 'fr',
+            '德文': 'de',
+            '西班牙文': 'es',
+            '意大利文': 'it',
+            '俄文': 'ru',
+            '阿拉伯文': 'ar'
+        }
         
         self.create_widgets()
         
@@ -119,21 +231,61 @@ class EpubReader:
         voice_frame = ttk.LabelFrame(left_frame, text="语音控制")
         voice_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # 语音选择
-        ttk.Label(voice_frame, text="选择语音:").pack(anchor=tk.W)
-        self.voice_combo = ttk.Combobox(voice_frame, values=self.voice_names, state="readonly")
+        # TTS引擎选择
+        ttk.Label(voice_frame, text="TTS引擎:").pack(anchor=tk.W)
+        self.engine_var = tk.StringVar(value="系统语音")
+        engine_frame = ttk.Frame(voice_frame)
+        engine_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        self.system_radio = ttk.Radiobutton(engine_frame, text="系统语音", variable=self.engine_var, 
+                                          value="系统语音", command=self.change_engine)
+        self.system_radio.pack(side=tk.LEFT)
+        
+        if GTTS_AVAILABLE:
+            self.local_radio = ttk.Radiobutton(engine_frame, text="在线语音", variable=self.engine_var, 
+                                             value="在线语音", command=self.change_engine)
+            self.local_radio.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # 系统语音选择
+        self.system_frame = ttk.Frame(voice_frame)
+        self.system_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Label(self.system_frame, text="选择语音:").pack(anchor=tk.W)
+        self.voice_combo = ttk.Combobox(self.system_frame, values=self.voice_names, state="readonly")
         self.voice_combo.pack(fill=tk.X, pady=(0, 5))
         self.voice_combo.current(0)
         self.voice_combo.bind("<<ComboboxSelected>>", self.change_voice)
         
         # 语速控制
-        ttk.Label(voice_frame, text="语速:").pack(anchor=tk.W)
+        ttk.Label(self.system_frame, text="语速:").pack(anchor=tk.W)
         self.rate_var = tk.IntVar(value=0)
-        self.rate_scale = ttk.Scale(voice_frame, from_=-10, to=10, variable=self.rate_var, 
+        self.rate_scale = ttk.Scale(self.system_frame, from_=-10, to=10, variable=self.rate_var, 
                                    orient=tk.HORIZONTAL, command=self.change_rate)
         self.rate_scale.pack(fill=tk.X, pady=(0, 5))
-        self.rate_label = ttk.Label(voice_frame, text="语速: 0")
+        self.rate_label = ttk.Label(self.system_frame, text="语速: 0")
         self.rate_label.pack(anchor=tk.W)
+        
+        # 在线语音选择
+        if GTTS_AVAILABLE:
+            self.local_frame = ttk.Frame(voice_frame)
+            
+            ttk.Label(self.local_frame, text="选择语言:").pack(anchor=tk.W)
+            self.lang_combo = ttk.Combobox(self.local_frame, values=list(self.tts_languages.keys()), state="readonly")
+            self.lang_combo.pack(fill=tk.X, pady=(0, 5))
+            self.lang_combo.current(0)  # 默认选择中文
+            self.lang_combo.bind("<<ComboboxSelected>>", self.change_language)
+            
+            # 语速选择
+            ttk.Label(self.local_frame, text="语速:").pack(anchor=tk.W)
+            self.slow_var = tk.BooleanVar()
+            self.slow_check = ttk.Checkbutton(self.local_frame, text="慢速朗读", variable=self.slow_var, 
+                                            command=self.change_slow)
+            self.slow_check.pack(anchor=tk.W, pady=(0, 5))
+            
+            # 音色说明
+            info_text = "在线语音支持多种语言，音质更自然\n需要网络连接"
+            self.info_label = ttk.Label(self.local_frame, text=info_text, font=("微软雅黑", 8))
+            self.info_label.pack(anchor=tk.W, pady=(5, 0))
         
         # 朗读控制按钮
         button_frame = ttk.Frame(voice_frame)
@@ -169,6 +321,27 @@ class EpubReader:
         self.content_text = scrolledtext.ScrolledText(right_frame, wrap=tk.WORD, font=("微软雅黑", 12))
         self.content_text.pack(fill=tk.BOTH, expand=True)
         
+        # 初始化界面状态
+        self.change_engine()
+    
+    def change_engine(self):
+        self.use_local_tts = (self.engine_var.get() == "在线语音")
+        
+        if self.use_local_tts and GTTS_AVAILABLE:
+            self.system_frame.pack_forget()
+            self.local_frame.pack(fill=tk.X, pady=(0, 5))
+        else:
+            if GTTS_AVAILABLE:
+                self.local_frame.pack_forget()
+            self.system_frame.pack(fill=tk.X, pady=(0, 5))
+    
+    def change_language(self, event=None):
+        lang_name = self.lang_combo.get()
+        self.current_lang = self.tts_languages.get(lang_name, 'zh')
+    
+    def change_slow(self):
+        self.current_slow = self.slow_var.get()
+    
     def change_voice(self, event=None):
         self.current_voice_index = self.voice_combo.current()
     
@@ -210,8 +383,13 @@ class EpubReader:
             text = self.content_text.get(1.0, tk.END).strip()
             if self.tts_thread and self.tts_thread.is_alive():
                 self.tts_thread.stop()
-            self.tts_thread = TextToSpeechThread(text, self.current_voice_index, 
-                                               self.current_rate, self.on_reading_finished, self)
+            
+            if self.use_local_tts and GTTS_AVAILABLE:
+                self.tts_thread = LocalTTSThread(text, self.current_lang, self.current_slow,
+                                               self.on_reading_finished, self)
+            else:
+                self.tts_thread = TextToSpeechThread(text, self.current_voice_index, 
+                                                   self.current_rate, self.on_reading_finished, self)
             self.tts_thread.start()
     
     def on_reading_finished(self):
