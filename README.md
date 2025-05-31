@@ -2,6 +2,8 @@
 
 一个基于Vue 3开发的功能完整的EPUB电子书阅读器，提供良好的用户体验和丰富的阅读功能。
 
+> 🤖 **AI驱动开发**: 本项目使用 [Cursor](https://cursor.sh/) 编辑器和 Claude-4-Sonnet AI 助手协作开发，展示了现代AI辅助编程的强大能力。
+
 ## 功能特性
 
 ### 📚 核心功能
@@ -40,6 +42,7 @@
 - **构建工具**: Vite
 - **样式预处理**: Sass
 - **文件解析**: JSZip + xml2js
+- **开发工具**: Cursor + Claude-4-Sonnet AI
 
 ## 项目结构
 
@@ -165,12 +168,16 @@ MIT License
 
 ## 致谢
 
-感谢以下开源项目：
+感谢以下开源项目和工具：
 - Vue.js
 - Element Plus
 - JSZip
 - xml2js
+- [Cursor](https://cursor.sh/) - AI驱动的代码编辑器
+- [Claude-4-Sonnet](https://www.anthropic.com/) - Anthropic的AI助手
 
 ---
+
+**🚀 AI + 人类协作开发**: 本项目展示了使用Cursor编辑器和Claude-4-Sonnet AI助手进行高效开发的可能性。通过AI辅助，我们能够快速构建功能完整、代码质量高的现代Web应用。
 
 如有问题或建议，请提交Issue或联系开发者。 
