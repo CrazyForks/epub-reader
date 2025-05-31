@@ -317,6 +317,9 @@ function parseNavToc(navHtml) {
 async function organizeChapters(zip, spine, manifest, toc) {
   const chapters = []
   
+  // 提取所有图片资源
+  const imageResources = await extractImageResources(zip, manifest)
+  
   for (let i = 0; i < spine.length; i++) {
     try {
       const itemId = spine[i]
@@ -326,6 +329,7 @@ async function organizeChapters(zip, spine, manifest, toc) {
         try {
           const htmlContent = await zip.file(item.href).async('text')
           const textContent = extractTextFromHtml(htmlContent)
+          const formattedHtmlContent = await cleanAndFormatHtml(htmlContent, item.href, imageResources)
           
           // 从目录中查找对应的标题
           const tocItem = findTocItem(toc, item.href)
@@ -335,8 +339,9 @@ async function organizeChapters(zip, spine, manifest, toc) {
             id: itemId,
             title,
             href: item.href,
-            content: textContent,
-            htmlContent,
+            content: textContent, // 纯文本内容，用于搜索和语音朗读
+            htmlContent: formattedHtmlContent, // 格式化的HTML内容，用于显示
+            rawHtmlContent: htmlContent, // 原始HTML内容，备用
             order: i
           })
         } catch (error) {
@@ -348,6 +353,7 @@ async function organizeChapters(zip, spine, manifest, toc) {
             href: item.href,
             content: '章节内容加载失败',
             htmlContent: '<p>章节内容加载失败</p>',
+            rawHtmlContent: '<p>章节内容加载失败</p>',
             order: i
           })
         }
@@ -358,6 +364,81 @@ async function organizeChapters(zip, spine, manifest, toc) {
   }
   
   return chapters
+}
+
+/**
+ * 提取图片资源
+ */
+async function extractImageResources(zip, manifest) {
+  const imageResources = new Map()
+  
+  try {
+    // 查找所有图片资源
+    const imageItems = Object.values(manifest).filter(item => 
+      item.mediaType && item.mediaType.startsWith('image/')
+    )
+    
+    for (const imageItem of imageItems) {
+      try {
+        const imageFile = zip.file(imageItem.href)
+        if (imageFile) {
+          const imageData = await imageFile.async('base64')
+          const mimeType = imageItem.mediaType
+          const dataUrl = `data:${mimeType};base64,${imageData}`
+          
+          // 使用相对路径和绝对路径作为键
+          imageResources.set(imageItem.href, dataUrl)
+          
+          // 也存储文件名作为键（处理相对路径引用）
+          const filename = imageItem.href.split('/').pop()
+          if (filename) {
+            imageResources.set(filename, dataUrl)
+          }
+        }
+      } catch (error) {
+        console.warn(`提取图片失败: ${imageItem.href}`, error)
+      }
+    }
+  } catch (error) {
+    console.warn('提取图片资源失败:', error)
+  }
+  
+  return imageResources
+}
+
+/**
+ * 解析图片路径
+ */
+function resolveImagePath(imageSrc, chapterHref, imageResources) {
+  try {
+    // 如果已经是data URL，直接返回
+    if (imageSrc.startsWith('data:')) {
+      return imageSrc
+    }
+    
+    // 获取章节所在目录
+    const chapterDir = chapterHref.substring(0, chapterHref.lastIndexOf('/') + 1)
+    
+    // 尝试不同的路径解析方式
+    const possiblePaths = [
+      imageSrc, // 原始路径
+      chapterDir + imageSrc, // 相对于章节目录
+      imageSrc.replace('../', ''), // 移除相对路径标记
+      imageSrc.split('/').pop() // 只使用文件名
+    ]
+    
+    for (const path of possiblePaths) {
+      if (imageResources.has(path)) {
+        return imageResources.get(path)
+      }
+    }
+    
+    // 如果找不到，返回占位符
+    return null
+  } catch (error) {
+    console.warn('解析图片路径失败:', imageSrc, error)
+    return null
+  }
 }
 
 /**
@@ -386,6 +467,122 @@ function extractTextFromHtml(html) {
     console.warn('HTML文本提取失败:', error)
     // 简单的HTML标签移除
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() || '内容解析失败'
+  }
+}
+
+/**
+ * 清理并格式化HTML内容，保留基本格式
+ */
+async function cleanAndFormatHtml(html, chapterHref, imageResources) {
+  try {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    
+    // 移除不需要的标签
+    const unwantedTags = ['script', 'style', 'meta', 'link', 'head']
+    unwantedTags.forEach(tag => {
+      const elements = doc.querySelectorAll(tag)
+      elements.forEach(el => el.remove())
+    })
+    
+    // 获取body内容，如果没有body则获取整个文档
+    const body = doc.body || doc.documentElement
+    
+    // 处理图片标签 - 转换为base64 data URL
+    const images = body.querySelectorAll('img')
+    images.forEach(img => {
+      const src = img.getAttribute('src')
+      if (src) {
+        const resolvedPath = resolveImagePath(src, chapterHref, imageResources)
+        if (resolvedPath) {
+          // 找到了图片，更新src
+          img.setAttribute('src', resolvedPath)
+          
+          // 添加一些基本的样式属性
+          img.setAttribute('style', 'max-width: 100%; height: auto; display: block; margin: 1em auto;')
+          
+          // 确保有alt属性
+          if (!img.getAttribute('alt')) {
+            img.setAttribute('alt', '图片')
+          }
+        } else {
+          // 找不到图片，替换为占位符
+          const alt = img.getAttribute('alt') || '图片'
+          const placeholder = doc.createElement('div')
+          placeholder.className = 'image-placeholder'
+          placeholder.innerHTML = `
+            <div class="image-placeholder-content">
+              <span class="image-icon">🖼️</span>
+              <span class="image-text">图片加载失败: ${alt}</span>
+            </div>
+          `
+          img.parentNode.replaceChild(placeholder, img)
+        }
+      } else {
+        // 没有src属性，替换为占位符
+        const alt = img.getAttribute('alt') || '图片'
+        const placeholder = doc.createElement('div')
+        placeholder.className = 'image-placeholder'
+        placeholder.innerHTML = `
+          <div class="image-placeholder-content">
+            <span class="image-icon">🖼️</span>
+            <span class="image-text">图片: ${alt}</span>
+          </div>
+        `
+        img.parentNode.replaceChild(placeholder, img)
+      }
+    })
+    
+    // 清理内联样式，保留基本结构（但保留图片的样式）
+    const allElements = body.querySelectorAll('*')
+    allElements.forEach(el => {
+      // 对于图片，保留style属性
+      if (el.tagName.toLowerCase() !== 'img') {
+        el.removeAttribute('style')
+      }
+      el.removeAttribute('class')
+      el.removeAttribute('id')
+      
+      // 保留语义化标签，移除其他属性
+      const allowedTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'span', 'br', 'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'blockquote', 'img']
+      if (!allowedTags.includes(el.tagName.toLowerCase())) {
+        // 将不支持的标签转换为div或span
+        const newTag = el.children.length > 0 ? 'div' : 'span'
+        const newElement = doc.createElement(newTag)
+        newElement.innerHTML = el.innerHTML
+        el.parentNode.replaceChild(newElement, el)
+      }
+    })
+    
+    // 清理空白和格式
+    let cleanHtml = body.innerHTML
+    
+    // 规范化空白字符
+    cleanHtml = cleanHtml.replace(/\s+/g, ' ')
+    
+    // 确保段落之间有适当的间距
+    cleanHtml = cleanHtml.replace(/<\/p>\s*<p>/g, '</p>\n<p>')
+    cleanHtml = cleanHtml.replace(/<\/h[1-6]>\s*<p>/g, '</h$1>\n<p>')
+    cleanHtml = cleanHtml.replace(/<\/div>\s*<div>/g, '</div>\n<div>')
+    
+    return cleanHtml || '<p>内容为空</p>'
+  } catch (error) {
+    console.warn('HTML清理失败:', error)
+    // 简单的清理
+    let fallbackHtml = html.replace(/<script[^>]*>.*?<\/script>/gi, '')
+                          .replace(/<style[^>]*>.*?<\/style>/gi, '')
+    
+    // 尝试处理图片
+    if (imageResources && chapterHref) {
+      fallbackHtml = fallbackHtml.replace(/<img[^>]*src="([^"]+)"[^>]*>/gi, (match, src) => {
+        const resolvedPath = resolveImagePath(src, chapterHref, imageResources)
+        return resolvedPath ? match.replace(src, resolvedPath) : '[图片加载失败]'
+      })
+    } else {
+      fallbackHtml = fallbackHtml.replace(/<img[^>]*>/gi, '[图片]')
+    }
+    
+    return fallbackHtml || '<p>内容解析失败</p>'
   }
 }
 

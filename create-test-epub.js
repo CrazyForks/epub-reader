@@ -31,6 +31,8 @@ async function createTestEpub() {
     <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
     <item id="chapter2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>
     <item id="chapter3" href="chapter3.xhtml" media-type="application/xhtml+xml"/>
+    <item id="test-image" href="images/test-image.svg" media-type="image/svg+xml"/>
+    <item id="diagram" href="images/diagram.svg" media-type="image/svg+xml"/>
   </manifest>
   <spine toc="ncx">
     <itemref idref="chapter1"/>
@@ -75,6 +77,12 @@ async function createTestEpub() {
 <body>
   <h1>第一章：欢迎使用EPUB阅读器</h1>
   <p>欢迎使用这个基于Vue 3开发的EPUB阅读器！这是一个功能完整的电子书阅读应用。</p>
+  
+  <div style="text-align: center; margin: 2em 0;">
+    <img src="images/test-image.svg" alt="EPUB阅读器测试图片" />
+    <p><em>图1：EPUB阅读器测试图片</em></p>
+  </div>
+  
   <p>本阅读器支持以下功能：</p>
   <ul>
     <li>📚 EPUB文件解析和显示</li>
@@ -85,9 +93,20 @@ async function createTestEpub() {
     <li>🌙 浅色/深色主题切换</li>
     <li>🔊 语音朗读功能</li>
     <li>📱 移动端优化</li>
+    <li>🖼️ 图片显示支持</li>
   </ul>
   <p>这个测试文件包含了多个章节，您可以使用左侧的目录进行导航，或者使用顶部的翻页按钮。</p>
   <p>在移动端，您还可以使用左右滑动手势来翻页！</p>
+  
+  <h2>图片显示测试</h2>
+  <p>下面是另一个测试图片，展示了EPUB阅读器的图片显示能力：</p>
+  
+  <div style="text-align: center; margin: 2em 0;">
+    <img src="images/diagram.svg" alt="渐变色图表示例" />
+    <p><em>图2：渐变色图表示例</em></p>
+  </div>
+  
+  <p>图片会自动适应屏幕宽度，在移动端也能正常显示。如果图片加载失败，会显示友好的占位符。</p>
 </body>
 </html>`;
   
@@ -191,6 +210,27 @@ async function createTestEpub() {
   zip.folder('OEBPS').file('chapter1.xhtml', chapter1);
   zip.folder('OEBPS').file('chapter2.xhtml', chapter2);
   zip.folder('OEBPS').file('chapter3.xhtml', chapter3);
+  
+  // 添加一个测试图片（简单的SVG）
+  const testImageSvg = `<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="200" height="100" fill="#409eff"/>
+    <text x="100" y="55" font-family="Arial" font-size="16" fill="white" text-anchor="middle">测试图片</text>
+  </svg>`;
+  zip.folder('OEBPS').file('images/test-image.svg', testImageSvg);
+  
+  // 添加另一个测试图片
+  const testImageSvg2 = `<svg width="300" height="150" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#ff6b6b;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#4ecdc4;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="300" height="150" fill="url(#grad1)"/>
+    <circle cx="150" cy="75" r="30" fill="white" opacity="0.8"/>
+    <text x="150" y="80" font-family="Arial" font-size="14" fill="#333" text-anchor="middle">EPUB图片</text>
+  </svg>`;
+  zip.folder('OEBPS').file('images/diagram.svg', testImageSvg2);
   
   // 生成EPUB文件
   const content = await zip.generateAsync({type: 'nodebuffer'});

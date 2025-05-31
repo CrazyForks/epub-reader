@@ -71,7 +71,12 @@
       ></div>
       
       <!-- 左侧面板 -->
-      <div class="sidebar" v-if="currentBook" v-show="sidebarVisible">
+      <div 
+        class="sidebar" 
+        v-if="currentBook" 
+        v-show="sidebarVisible"
+        :style="{ width: !isMobile ? sidebarWidth + 'px' : '100%' }"
+      >
         <el-tabs v-model="activeTab" type="border-card">
           <!-- 目录 -->
           <el-tab-pane label="目录" name="toc">
@@ -120,6 +125,14 @@
             <SpeechControl />
           </el-tab-pane>
         </el-tabs>
+        
+        <!-- 拖拽手柄 (仅PC端显示) -->
+        <div 
+          v-if="!isMobile" 
+          class="resize-handle"
+          @mousedown="startResize"
+          :class="{ 'resizing': isResizing }"
+        ></div>
       </div>
       
       <!-- 阅读区域 -->
@@ -228,6 +241,14 @@ const touchStartY = ref(0)
 const touchEndX = ref(0)
 const touchEndY = ref(0)
 
+// 拖拽调整侧边栏宽度相关
+const sidebarWidth = ref(300) // 默认宽度
+const isResizing = ref(false)
+const startX = ref(0)
+const startWidth = ref(0)
+const minSidebarWidth = 200 // 最小宽度
+const maxSidebarWidth = 500 // 最大宽度
+
 // 计算属性
 const currentBook = computed(() => epubStore.currentBook)
 const chapters = computed(() => epubStore.chapters)
@@ -245,7 +266,8 @@ const isDarkTheme = computed(() => settingsStore.theme === 'dark')
 
 // 高亮搜索结果的内容
 const highlightedContent = computed(() => {
-  let content = currentChapterContent.value
+  // 使用格式化的HTML内容而不是纯文本
+  let content = epubStore.currentChapterHtmlContent || currentChapterContent.value
   if (searchKeyword.value && searchResults.value.length > 0) {
     const keyword = searchKeyword.value
     const regex = new RegExp(`(${keyword})`, 'gi')
@@ -419,9 +441,22 @@ onMounted(() => {
   settingsStore.loadSettings()
   document.addEventListener('keydown', handleKeydown)
   
+  // 移动端检测
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+  
   // 移动端默认收起侧边栏
   if (isMobile.value) {
     sidebarVisible.value = false
+  }
+  
+  // 从本地存储恢复侧边栏宽度
+  const savedWidth = localStorage.getItem('sidebarWidth')
+  if (savedWidth) {
+    const width = parseInt(savedWidth)
+    if (width >= minSidebarWidth && width <= maxSidebarWidth) {
+      sidebarWidth.value = width
+    }
   }
 })
 
@@ -431,9 +466,61 @@ watch(currentBook, (newBook) => {
     epubStore.loadBookmarks()
   }
 }, { immediate: true })
+
+// 移动端检测
+const checkMobile = () => {
+  isMobile.value = window.innerWidth <= 768
+}
+
+// 拖拽调整侧边栏宽度的方法
+const startResize = (event) => {
+  if (isMobile.value) return // 移动端不支持拖拽
+  
+  isResizing.value = true
+  startX.value = event.clientX
+  startWidth.value = sidebarWidth.value
+  
+  document.addEventListener('mousemove', handleResize)
+  document.addEventListener('mouseup', stopResize)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
+const handleResize = (event) => {
+  if (!isResizing.value) return
+  
+  const deltaX = event.clientX - startX.value
+  const newWidth = startWidth.value + deltaX
+  
+  // 限制宽度范围
+  if (newWidth >= minSidebarWidth && newWidth <= maxSidebarWidth) {
+    sidebarWidth.value = newWidth
+  }
+}
+
+const stopResize = () => {
+  isResizing.value = false
+  document.removeEventListener('mousemove', handleResize)
+  document.removeEventListener('mouseup', stopResize)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  
+  // 保存宽度到本地存储
+  localStorage.setItem('sidebarWidth', sidebarWidth.value.toString())
+}
 </script>
 
 <style lang="scss" scoped>
+// 拖拽调整侧边栏宽度的样式
+.resizing-active {
+  user-select: none;
+  cursor: col-resize !important;
+  
+  * {
+    cursor: col-resize !important;
+  }
+}
+
 .epub-reader {
   height: 100vh;
   display: flex;
@@ -512,111 +599,153 @@ watch(currentBook, (newBook) => {
 .sidebar {
   width: 300px;
   border-right: 1px solid #e4e7ed;
+  position: relative; // 为拖拽手柄定位
   
   .dark-theme & {
     border-right-color: #3a3a3a;
   }
   
-  .toc-container {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
-  }
-  
-  .toc-item {
-    display: flex;
-    align-items: center;
-    padding: 8px 12px;
-    cursor: pointer;
-    border-bottom: 1px solid #f0f0f0;
+  // 拖拽手柄样式
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    background-color: transparent;
+    z-index: 10;
     
     &:hover {
-      background-color: #f5f7fa;
-    }
-    
-    &.active {
       background-color: #409eff;
-      color: white;
+      opacity: 0.6;
     }
     
-    .dark-theme & {
-      border-bottom-color: #3a3a3a;
-      
-      &:hover {
-        background-color: #3a3a3a;
-      }
+    &.resizing {
+      background-color: #409eff;
+      opacity: 0.8;
     }
     
-    .chapter-number {
-      margin-right: 8px;
-      font-weight: 500;
-      min-width: 30px;
+    // 添加一个可视化的拖拽指示器
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 2px;
+      height: 30px;
+      background-color: #ddd;
+      border-radius: 1px;
+      transition: background-color 0.3s;
     }
     
-    .chapter-title {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    &:hover::after,
+    &.resizing::after {
+      background-color: #409eff;
     }
   }
+}
+
+.toc-container {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.toc-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
   
-  .bookmarks-container {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
+  &:hover {
+    background-color: #f5f7fa;
   }
   
-  .bookmark-item {
-    display: flex;
-    flex-direction: column;
-    padding: 12px;
-    border-bottom: 1px solid #f0f0f0;
-    cursor: pointer;
-    position: relative;
+  &.active {
+    background-color: #409eff;
+    color: white;
+  }
+  
+  .dark-theme & {
+    border-bottom-color: #3a3a3a;
     
     &:hover {
-      background-color: #f5f7fa;
-      
-      .el-button {
-        opacity: 1;
-      }
+      background-color: #3a3a3a;
     }
-    
-    .dark-theme & {
-      border-bottom-color: #3a3a3a;
-      
-      &:hover {
-        background-color: #3a3a3a;
-      }
-    }
-    
-    .bookmark-name {
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-    
-    .bookmark-info {
-      font-size: 12px;
-      color: #666;
-      
-      .dark-theme & {
-        color: #999;
-      }
-    }
+  }
+  
+  .chapter-number {
+    margin-right: 8px;
+    font-weight: 500;
+    min-width: 30px;
+  }
+  
+  .chapter-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.bookmarks-container {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.bookmark-item {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  position: relative;
+  
+  &:hover {
+    background-color: #f5f7fa;
     
     .el-button {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      opacity: 0;
-      transition: opacity 0.3s;
+      opacity: 1;
     }
   }
   
-  .empty-bookmarks {
-    text-align: center;
-    color: #999;
-    padding: 40px 20px;
+  .dark-theme & {
+    border-bottom-color: #3a3a3a;
+    
+    &:hover {
+      background-color: #3a3a3a;
+    }
   }
+  
+  .bookmark-name {
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  
+  .bookmark-info {
+    font-size: 12px;
+    color: #666;
+    
+    .dark-theme & {
+      color: #999;
+    }
+  }
+  
+  .el-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+}
+
+.empty-bookmarks {
+  text-align: center;
+  color: #999;
+  padding: 40px 20px;
 }
 
 .reading-area {
@@ -648,6 +777,143 @@ watch(currentBook, (newBook) => {
     padding: 40px;
     overflow-y: auto;
     line-height: 1.8;
+    
+    // HTML格式化内容样式
+    h1, h2, h3, h4, h5, h6 {
+      margin: 2em 0 1em 0;
+      font-weight: bold;
+      line-height: 1.3;
+      color: #303133;
+      
+      .dark-theme & {
+        color: #e0e0e0;
+      }
+    }
+    
+    h1 { font-size: 2em; }
+    h2 { font-size: 1.8em; }
+    h3 { font-size: 1.6em; }
+    h4 { font-size: 1.4em; }
+    h5 { font-size: 1.2em; }
+    h6 { font-size: 1.1em; }
+    
+    p {
+      margin: 1em 0;
+      text-indent: 2em; // 中文段落首行缩进
+      text-align: justify; // 两端对齐
+    }
+    
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+      
+      li {
+        margin: 0.5em 0;
+        line-height: 1.6;
+      }
+    }
+    
+    blockquote {
+      margin: 1.5em 0;
+      padding: 1em 1.5em;
+      border-left: 4px solid #409eff;
+      background-color: rgba(64, 158, 255, 0.1);
+      font-style: italic;
+      border-radius: 0 4px 4px 0;
+      
+      .dark-theme & {
+        background-color: rgba(64, 158, 255, 0.2);
+        border-left-color: #79bbff;
+      }
+    }
+    
+    strong, b {
+      font-weight: bold;
+      color: #303133;
+      
+      .dark-theme & {
+        color: #e0e0e0;
+      }
+    }
+    
+    em, i {
+      font-style: italic;
+    }
+    
+    // 桌面端图片样式
+    img {
+      max-width: 60%; // 桌面端图片适中大小
+      height: auto;
+      display: block;
+      margin: 1.5em auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      
+      &:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+      }
+      
+      .dark-theme & {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        
+        &:hover {
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+      }
+    }
+    
+    .image-placeholder {
+      display: block;
+      margin: 1.5em auto;
+      padding: 2em;
+      background-color: #f8f9fa;
+      border: 2px dashed #dee2e6;
+      border-radius: 8px;
+      text-align: center;
+      max-width: 400px;
+      transition: border-color 0.3s ease;
+      
+      &:hover {
+        border-color: #409eff;
+      }
+      
+      .dark-theme & {
+        background-color: #2a2a2a;
+        border-color: #4a4a4a;
+        
+        &:hover {
+          border-color: #79bbff;
+        }
+      }
+      
+      .image-placeholder-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.8em;
+        
+        .image-icon {
+          font-size: 2.5em;
+          opacity: 0.6;
+          color: #6c757d;
+          
+          .dark-theme & {
+            color: #999;
+          }
+        }
+        
+        .image-text {
+          color: #6c757d;
+          font-size: 0.9em;
+          
+          .dark-theme & {
+            color: #999;
+          }
+        }
+      }
+    }
     
     :deep(.search-highlight) {
       background-color: #ffff00;
@@ -900,6 +1166,83 @@ watch(currentBook, (newBook) => {
       word-break: break-word;
       -webkit-hyphens: auto;
       hyphens: auto;
+      
+      // HTML格式化内容样式
+      h1, h2, h3, h4, h5, h6 {
+        margin: 1.5em 0 0.5em 0;
+        font-weight: bold;
+        line-height: 1.3;
+      }
+      
+      h1 { font-size: 1.8em; }
+      h2 { font-size: 1.6em; }
+      h3 { font-size: 1.4em; }
+      h4 { font-size: 1.2em; }
+      h5 { font-size: 1.1em; }
+      h6 { font-size: 1em; }
+      
+      p {
+        margin: 0.8em 0;
+        text-indent: 2em; // 中文段落首行缩进
+      }
+      
+      ul, ol {
+        margin: 1em 0;
+        padding-left: 2em;
+        
+        li {
+          margin: 0.3em 0;
+        }
+      }
+      
+      blockquote {
+        margin: 1em 0;
+        padding: 0.5em 1em;
+        border-left: 3px solid #ddd;
+        background-color: rgba(0, 0, 0, 0.05);
+        font-style: italic;
+      }
+      
+      strong, b {
+        font-weight: bold;
+      }
+      
+      em, i {
+        font-style: italic;
+      }
+      
+      // 移动端图片优化
+      img {
+        max-width: 80%; // 移动端图片稍大一些
+        height: auto;
+        display: block;
+        margin: 1em auto;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      
+      .image-placeholder {
+        max-width: 250px; // 移动端占位符更小
+        padding: 1.5em;
+        
+        .image-placeholder-content {
+          .image-icon {
+            font-size: 1.5em;
+          }
+          
+          .image-text {
+            font-size: 0.8em;
+          }
+        }
+      }
+      
+      // 搜索高亮样式
+      .search-highlight {
+        background-color: yellow;
+        color: black;
+        padding: 0 2px;
+        border-radius: 2px;
+      }
     }
   }
   
@@ -923,132 +1266,6 @@ watch(currentBook, (newBook) => {
         padding: 12px 24px;
         font-size: 16px;
       }
-    }
-  }
-}
-
-// 小屏幕手机优化 (iPhone SE等)
-@media (max-width: 480px) {
-  .toolbar {
-    .toolbar-left,
-    .toolbar-center,
-    .toolbar-right {
-      .el-button {
-        padding: 6px 8px;
-        font-size: 12px;
-        min-height: 40px;
-      }
-      
-      .el-button-group .el-button {
-        padding: 6px 8px;
-      }
-    }
-    
-    .book-title {
-      font-size: 12px;
-    }
-  }
-  
-  .sidebar {
-    max-height: 35vh;
-    
-    .el-tabs__content {
-      max-height: calc(35vh - 50px);
-    }
-    
-    .chapter-item,
-    .bookmark-item {
-      padding: 10px 6px;
-      min-height: 40px;
-    }
-  }
-  
-  .reading-area {
-    .chapter-header {
-      padding: 10px 12px;
-      
-      h2 {
-        font-size: 16px;
-      }
-    }
-    
-    .chapter-content {
-      padding: 12px;
-      font-size: 15px;
-    }
-  }
-}
-
-// 横屏模式优化
-@media (max-width: 768px) and (orientation: landscape) {
-  .main-content {
-    flex-direction: row;
-  }
-  
-  .sidebar {
-    width: 300px;
-    max-height: 100vh;
-    border-right: 1px solid #e4e7ed;
-    border-bottom: none;
-    
-    .dark-theme & {
-      border-right-color: #3a3a3a;
-      border-bottom: none;
-    }
-  }
-}
-
-// 触摸设备优化
-@media (hover: none) and (pointer: coarse) {
-  // 移除hover效果，使用active状态
-  .chapter-item:hover,
-  .bookmark-item:hover {
-    background-color: transparent;
-  }
-  
-  .chapter-item:active,
-  .bookmark-item:active {
-    background-color: #f5f7fa;
-    
-    .dark-theme & {
-      background-color: #3a3a3a;
-    }
-  }
-  
-  // 优化按钮触摸反馈
-  .el-button:active {
-    transform: scale(0.98);
-    transition: transform 0.1s;
-  }
-}
-
-// 桌面端样式 (确保不被移动端影响)
-@media (min-width: 769px) {
-  .reading-area {
-    // 重置移动端可能的影响
-    height: auto !important;
-    margin-top: 0 !important;
-    overflow: visible !important;
-    transition: none !important;
-    
-    .chapter-header {
-      padding: 20px 40px !important;
-      
-      h2 {
-        font-size: inherit !important;
-        line-height: inherit !important;
-        color: #303133 !important;
-        
-        .dark-theme & {
-          color: #e0e0e0 !important;
-        }
-      }
-    }
-    
-    .chapter-content {
-      padding: 40px !important;
-      font-size: inherit !important;
-      line-height: 1.8 !important;
     }
   }
 }

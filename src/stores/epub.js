@@ -18,6 +18,11 @@ export const useEpubStore = defineStore('epub', () => {
     return chapters.value[currentChapterIndex.value] || null
   })
 
+  const currentChapterHtmlContent = computed(() => {
+    const chapter = chapters.value[currentChapterIndex.value]
+    return chapter?.htmlContent || ''
+  })
+
   const totalChapters = computed(() => chapters.value.length)
 
   const hasNextChapter = computed(() => {
@@ -242,6 +247,7 @@ export const useEpubStore = defineStore('epub', () => {
     readingProgress,
     // 计算属性
     currentChapter,
+    currentChapterHtmlContent,
     totalChapters,
     hasNextChapter,
     hasPrevChapter,

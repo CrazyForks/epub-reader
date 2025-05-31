@@ -3,10 +3,28 @@
     <div class="speech-status" v-if="!isSupported">
       <el-alert
         title="语音功能不可用"
-        description="您的浏览器不支持语音合成功能"
+        :description="errorMessage"
         type="warning"
         :closable="false"
       />
+      
+      <!-- 重新检测按钮 -->
+      <div class="reload-section">
+        <el-button @click="reloadVoices" type="primary" size="small" :loading="isReloading">
+          {{ isReloading ? '检测中...' : '重新检测语音' }}
+        </el-button>
+        <p class="reload-tip">如果语音功能突然不可用，请点击重新检测</p>
+      </div>
+      
+      <!-- 移动端特殊提示 -->
+      <div v-if="isMobile && suggestions.length > 0" class="mobile-suggestions">
+        <h4>解决建议：</h4>
+        <ul>
+          <li v-for="(suggestion, index) in suggestions" :key="index">
+            {{ suggestion }}
+          </li>
+        </ul>
+      </div>
     </div>
     
     <div v-else class="speech-panel">
@@ -40,6 +58,16 @@
         </el-button-group>
       </div>
       
+      <!-- 移动端警告信息 -->
+      <div v-if="isMobile && fallbackMessage" class="mobile-warning">
+        <el-alert
+          :title="fallbackMessage"
+          type="info"
+          :closable="true"
+          show-icon
+        />
+      </div>
+      
       <!-- 语音设置 -->
       <div class="speech-settings">
         <!-- 语音选择 -->
@@ -68,7 +96,7 @@
               :max="2"
               :step="0.1"
               @change="handleRateChange"
-              style="flex: 1"
+              class="speech-slider"
             />
             <span class="rate-value">{{ speechRate.toFixed(1) }}x</span>
           </div>
@@ -83,7 +111,7 @@
               :max="1"
               :step="0.1"
               @change="handleVolumeChange"
-              style="flex: 1"
+              class="speech-slider"
             />
             <span class="volume-value">{{ Math.round(volume * 100) }}%</span>
           </div>
@@ -134,6 +162,11 @@ const speechRate = ref(1)
 const volume = ref(1)
 const autoNextChapter = ref(false)
 const progressPercentage = ref(0)
+const errorMessage = ref('')
+const isMobile = ref(false)
+const suggestions = ref([])
+const fallbackMessage = ref('')
+const isReloading = ref(false)
 
 // 计算属性
 const currentBook = computed(() => epubStore.currentBook)
@@ -147,10 +180,19 @@ const canSpeak = computed(() => {
 
 // 方法
 const initSpeech = () => {
+  console.log('初始化语音功能...')
+  
+  // 强制重新加载语音列表
+  speechManager.forceReloadVoices()
+  
   const status = speechManager.getStatus()
+  console.log('语音状态:', status)
+  
   isSupported.value = status.isSupported
+  isMobile.value = speechManager.isMobile
   
   if (isSupported.value) {
+    console.log('语音功能可用')
     // 加载可用语音
     loadVoices()
     
@@ -173,21 +215,73 @@ const initSpeech = () => {
     if (selectedVoice.value) {
       speechManager.setVoice(selectedVoice.value)
     }
+    
+    // 检查移动端警告信息
+    if (isMobile.value && speechManager.fallbackMessage) {
+      fallbackMessage.value = speechManager.fallbackMessage
+    }
+    
+    // 清除错误信息
+    errorMessage.value = ''
+    suggestions.value = []
+    
+  } else {
+    console.log('语音功能不可用')
+    errorMessage.value = speechManager.fallbackMessage || '您的浏览器不支持语音合成功能'
+    
+    if (speechManager.fallbackMode) {
+      suggestions.value = speechManager.getFallbackSuggestions()
+    }
+    
+    // 如果是因为语音列表为空，给出特定的建议
+    if (status.voiceCount === 0) {
+      errorMessage.value = '没有检测到可用的语音引擎'
+      suggestions.value = [
+        '请确保系统已安装语音合成引擎',
+        '在Windows上，请检查"设置 > 时间和语言 > 语音"',
+        '在macOS上，请检查"系统偏好设置 > 辅助功能 > 语音"',
+        '尝试重启浏览器或刷新页面',
+        '如果问题持续，请尝试使用Chrome或Edge浏览器'
+      ]
+    }
   }
 }
 
 const loadVoices = () => {
-  availableVoices.value = speechManager.getVoices()
+  const allVoices = speechManager.getVoices()
+  
+  // 只保留中文语音
+  availableVoices.value = allVoices.filter(voice => {
+    const lang = voice.lang.toLowerCase()
+    const name = voice.name.toLowerCase()
+    
+    // 匹配中文相关的语言代码和名称
+    return lang.includes('zh') || 
+           lang.includes('chinese') ||
+           name.includes('chinese') ||
+           name.includes('中文') ||
+           name.includes('普通话') ||
+           name.includes('mandarin') ||
+           name.includes('cantonese') ||
+           name.includes('taiwan') ||
+           name.includes('hong kong') ||
+           name.includes('simplified') ||
+           name.includes('traditional')
+  })
+  
+  // 如果没有找到中文语音，显示警告
+  if (availableVoices.value.length === 0) {
+    ElMessage.warning('未找到中文语音，请检查系统语音设置')
+    // 如果实在没有中文语音，至少显示一个默认语音
+    if (allVoices.length > 0) {
+      availableVoices.value = [allVoices[0]]
+    }
+  }
   
   // 如果没有选择语音，自动选择第一个中文语音
   if (!selectedVoice.value && availableVoices.value.length > 0) {
-    const chineseVoice = availableVoices.value.find(voice => 
-      voice.lang.includes('zh') || voice.name.includes('Chinese')
-    )
-    if (chineseVoice) {
-      selectedVoice.value = chineseVoice.name
-      speechManager.setVoice(selectedVoice.value)
-    }
+    selectedVoice.value = availableVoices.value[0].name
+    speechManager.setVoice(selectedVoice.value)
   }
 }
 
@@ -295,20 +389,29 @@ const handleSpeechResume = () => {
 }
 
 const handleSpeechError = (error) => {
-  // 只有在非停止状态下才显示错误消息
-  if (!error || error.error === 'interrupted' || error.error === 'canceled') {
-    return
-  }
+  console.warn('语音合成错误:', error)
   
-  isPlaying.value = false
-  isPaused.value = false
-  progressPercentage.value = 0
-  
-  console.warn('语音朗读错误:', error)
-  
-  // 只对真正的错误显示消息
-  if (error.error && error.error !== 'interrupted' && error.error !== 'canceled') {
-    ElMessage.warning(`语音朗读遇到问题，已自动处理`)
+  if (error.type === 'fallback') {
+    // 备用方案错误
+    ElMessage({
+      message: error.message,
+      type: 'warning',
+      duration: 5000
+    })
+    
+    if (error.suggestions && error.suggestions.length > 0) {
+      suggestions.value = error.suggestions
+      
+      // 显示详细的解决建议
+      ElMessage({
+        message: '请查看语音面板中的解决建议',
+        type: 'info',
+        duration: 3000
+      })
+    }
+  } else {
+    // 其他错误
+    ElMessage.error('语音朗读出现错误，请重试')
   }
 }
 
@@ -337,6 +440,42 @@ onMounted(() => {
     syncStatus()
   }, 500)
 })
+
+const reloadVoices = async () => {
+  isReloading.value = true
+  
+  try {
+    console.log('用户手动重新加载语音...')
+    
+    // 重置状态
+    speechManager.fallbackMode = false
+    speechManager.fallbackMessage = ''
+    
+    // 强制重新加载
+    speechManager.forceReloadVoices()
+    
+    // 等待一段时间让语音加载
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // 重新初始化
+    initSpeech()
+    
+    // 再次检查状态
+    const status = speechManager.getStatus()
+    
+    if (status.isSupported) {
+      ElMessage.success('语音功能已恢复正常')
+    } else {
+      ElMessage.warning('仍然无法检测到语音引擎，请检查系统设置')
+    }
+    
+  } catch (error) {
+    console.error('重新加载语音失败:', error)
+    ElMessage.error('重新加载失败，请刷新页面重试')
+  } finally {
+    isReloading.value = false
+  }
+}
 </script>
 
 <style lang="scss" scoped>
@@ -356,10 +495,17 @@ onMounted(() => {
         :deep(.el-form-item__label) {
           font-weight: 500;
           color: #303133;
+          width: 100px;
+          text-align: right;
+          padding-right: 8px;
           
           .dark-theme & {
             color: #e0e0e0;
           }
+        }
+        
+        :deep(.el-form-item__content) {
+          margin-left: 110px;
         }
       }
       
@@ -368,13 +514,31 @@ onMounted(() => {
         display: flex;
         align-items: center;
         gap: 12px;
+        width: 100%;
+        
+        .speech-slider {
+          flex: 1;
+          min-width: 200px;
+          max-width: 300px;
+          margin: 0 8px;
+          
+          :deep(.el-slider__runway) {
+            height: 6px;
+          }
+          
+          :deep(.el-slider__button) {
+            width: 18px;
+            height: 18px;
+          }
+        }
         
         .rate-value,
         .volume-value {
-          min-width: 40px;
-          text-align: right;
+          min-width: 50px;
+          text-align: center;
           font-size: 14px;
           color: #666;
+          flex-shrink: 0;
           
           .dark-theme & {
             color: #999;
@@ -424,7 +588,7 @@ onMounted(() => {
           
           .el-button {
             margin: 0;
-            min-height: 44px; // 移动端触摸标准
+            min-height: 44px;
             font-size: 14px;
             border-radius: 6px;
             
@@ -454,7 +618,6 @@ onMounted(() => {
           }
         }
         
-        // 选择器优化
         .el-select {
           width: 100%;
           
@@ -464,34 +627,28 @@ onMounted(() => {
           }
         }
         
-        // 滑块优化
         .rate-control,
         .volume-control {
-          gap: 8px;
-          
-          .el-slider {
-            flex: 1;
-            margin: 0 8px;
+          .speech-slider {
+            min-width: 120px;
             
             :deep(.el-slider__runway) {
-              height: 6px;
+              height: 8px;
             }
             
             :deep(.el-slider__button) {
-              width: 20px;
-              height: 20px;
+              width: 24px;
+              height: 24px;
             }
           }
           
           .rate-value,
           .volume-value {
-            min-width: 50px;
-            font-size: 14px;
-            text-align: center;
+            min-width: 45px;
+            font-size: 13px;
           }
         }
         
-        // 复选框优化
         .el-checkbox {
           :deep(.el-checkbox__label) {
             font-size: 14px;
@@ -587,7 +744,7 @@ onMounted(() => {
   }
 }
 
-// 横屏模式优化
+// 横屏模式优化（仅限移动设备）
 @media (max-width: 768px) and (orientation: landscape) {
   .speech-control {
     .speech-panel {
@@ -609,6 +766,24 @@ onMounted(() => {
         
         .el-form-item {
           margin-bottom: 12px;
+          
+          :deep(.el-form-item__label) {
+            width: auto;
+            text-align: left;
+            padding-right: 0;
+          }
+          
+          :deep(.el-form-item__content) {
+            margin-left: 0;
+          }
+        }
+        
+        .rate-control,
+        .volume-control {
+          .speech-slider {
+            min-width: 100px;
+            max-width: none;
+          }
         }
       }
     }
@@ -630,6 +805,110 @@ onMounted(() => {
         
         &:active {
           transform: scale(1.2);
+        }
+      }
+    }
+  }
+}
+
+.reload-section {
+  margin-top: 16px;
+  text-align: center;
+  
+  .el-button {
+    margin-bottom: 8px;
+  }
+  
+  .reload-tip {
+    margin: 0;
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.4;
+  }
+}
+
+.mobile-suggestions {
+  margin-top: 16px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #409eff;
+}
+
+.mobile-suggestions h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #409eff;
+}
+
+.mobile-suggestions ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.mobile-suggestions li {
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #606266;
+}
+
+.mobile-warning {
+  margin-bottom: 16px;
+}
+
+/* 深色主题 */
+.dark-theme .mobile-suggestions {
+  background-color: #2d2d2d;
+  border-left-color: #409eff;
+}
+
+.dark-theme .mobile-suggestions h4 {
+  color: #79bbff;
+}
+
+.dark-theme .mobile-suggestions li {
+  color: #c0c4cc;
+}
+
+// 桌面端优化
+@media (min-width: 769px) {
+  .speech-control {
+    .speech-panel {
+      .speech-settings {
+        max-width: 500px;
+        
+        .el-form-item {
+          :deep(.el-form-item__label) {
+            width: 100px;
+            text-align: right;
+            padding-right: 8px;
+          }
+          
+          :deep(.el-form-item__content) {
+            margin-left: 110px;
+          }
+        }
+        
+        .rate-control,
+        .volume-control {
+          max-width: 350px;
+          
+          .speech-slider {
+            min-width: 220px;
+            max-width: 280px;
+          }
+        }
+        
+        .el-select {
+          max-width: 350px;
+        }
+        
+        .el-checkbox {
+          :deep(.el-checkbox__label) {
+            font-size: 14px;
+            line-height: 1.5;
+          }
         }
       }
     }
