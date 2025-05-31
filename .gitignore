@@ -3,6 +3,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # Runtime data
 pids
@@ -77,6 +79,8 @@ typings/
 # Nuxt.js build / generate output
 .nuxt
 dist
+dist-ssr
+*.local
 
 # Gatsby files
 .cache/
@@ -113,10 +117,22 @@ logs
 
 # OS generated files
 Thumbs.db
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 ehthumbs.db
-Desktop.ini
 
 # Audio files (temporary)
 *.mp3
 *.wav
-*.ogg 
+*.ogg
+
+# Test files
+test-book.epub
+*.epub
+
+# Temporary files
+*.tmp
+*.temp 

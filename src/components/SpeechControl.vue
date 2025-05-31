@@ -412,13 +412,224 @@ onMounted(() => {
   .speech-control {
     padding: 12px;
     
-    .control-buttons {
-      .el-button-group {
-        display: flex;
-        flex-direction: column;
+    .speech-panel {
+      .control-buttons {
+        margin-bottom: 16px;
         
-        .el-button {
-          margin: 2px 0;
+        .el-button-group {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          gap: 8px;
+          
+          .el-button {
+            margin: 0;
+            min-height: 44px; // 移动端触摸标准
+            font-size: 14px;
+            border-radius: 6px;
+            
+            &:first-child {
+              border-radius: 6px;
+            }
+            
+            &:last-child {
+              border-radius: 6px;
+            }
+          }
+        }
+      }
+      
+      .speech-settings {
+        .el-form-item {
+          margin-bottom: 20px;
+          
+          :deep(.el-form-item__label) {
+            font-size: 14px;
+            line-height: 1.4;
+            margin-bottom: 8px;
+          }
+          
+          :deep(.el-form-item__content) {
+            line-height: 1.4;
+          }
+        }
+        
+        // 选择器优化
+        .el-select {
+          width: 100%;
+          
+          :deep(.el-input__inner) {
+            min-height: 44px;
+            font-size: 14px;
+          }
+        }
+        
+        // 滑块优化
+        .rate-control,
+        .volume-control {
+          gap: 8px;
+          
+          .el-slider {
+            flex: 1;
+            margin: 0 8px;
+            
+            :deep(.el-slider__runway) {
+              height: 6px;
+            }
+            
+            :deep(.el-slider__button) {
+              width: 20px;
+              height: 20px;
+            }
+          }
+          
+          .rate-value,
+          .volume-value {
+            min-width: 50px;
+            font-size: 14px;
+            text-align: center;
+          }
+        }
+        
+        // 复选框优化
+        .el-checkbox {
+          :deep(.el-checkbox__label) {
+            font-size: 14px;
+            line-height: 1.4;
+          }
+          
+          :deep(.el-checkbox__input) {
+            .el-checkbox__inner {
+              width: 18px;
+              height: 18px;
+            }
+          }
+        }
+      }
+      
+      .speech-status {
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 8px;
+        
+        :deep(.el-progress) {
+          .el-progress__text {
+            font-size: 12px;
+          }
+        }
+        
+        .status-text {
+          margin-top: 6px;
+          font-size: 13px;
+          line-height: 1.4;
+        }
+      }
+    }
+  }
+}
+
+// 小屏幕优化
+@media (max-width: 480px) {
+  .speech-control {
+    padding: 8px;
+    
+    .speech-panel {
+      .control-buttons {
+        .el-button-group {
+          .el-button {
+            min-height: 40px;
+            font-size: 13px;
+            padding: 8px 12px;
+          }
+        }
+      }
+      
+      .speech-settings {
+        .el-form-item {
+          margin-bottom: 16px;
+          
+          :deep(.el-form-item__label) {
+            font-size: 13px;
+          }
+        }
+        
+        .el-select {
+          :deep(.el-input__inner) {
+            min-height: 40px;
+            font-size: 13px;
+          }
+        }
+        
+        .rate-control,
+        .volume-control {
+          .rate-value,
+          .volume-value {
+            min-width: 45px;
+            font-size: 13px;
+          }
+        }
+        
+        .el-checkbox {
+          :deep(.el-checkbox__label) {
+            font-size: 13px;
+          }
+        }
+      }
+      
+      .speech-status {
+        padding: 10px;
+        
+        .status-text {
+          font-size: 12px;
+        }
+      }
+    }
+  }
+}
+
+// 横屏模式优化
+@media (max-width: 768px) and (orientation: landscape) {
+  .speech-control {
+    .speech-panel {
+      .control-buttons {
+        .el-button-group {
+          flex-direction: row;
+          
+          .el-button {
+            flex: 1;
+            min-height: 40px;
+          }
+        }
+      }
+      
+      .speech-settings {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        
+        .el-form-item {
+          margin-bottom: 12px;
+        }
+      }
+    }
+  }
+}
+
+// 触摸设备优化
+@media (hover: none) and (pointer: coarse) {
+  .speech-control {
+    .el-button:active {
+      transform: scale(0.98);
+      transition: transform 0.1s;
+    }
+    
+    .el-slider {
+      :deep(.el-slider__button) {
+        width: 24px;
+        height: 24px;
+        
+        &:active {
+          transform: scale(1.2);
         }
       }
     }

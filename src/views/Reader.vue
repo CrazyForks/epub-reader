@@ -6,6 +6,14 @@
         <el-button @click="openFile" type="primary" :icon="FolderOpened">
           打开EPUB文件
         </el-button>
+        <el-button 
+          v-if="currentBook && isMobile" 
+          @click="toggleSidebar" 
+          :icon="sidebarVisible ? 'ArrowUp' : 'ArrowDown'"
+          size="small"
+        >
+          {{ sidebarVisible ? '收起' : '展开' }}
+        </el-button>
         <span v-if="currentBook" class="book-title">{{ currentBook.title }}</span>
       </div>
       
@@ -55,8 +63,15 @@
     
     <!-- 主要内容区域 -->
     <div class="main-content">
+      <!-- 遮罩层 -->
+      <div 
+        v-if="sidebarVisible && isMobile && currentBook" 
+        class="sidebar-overlay"
+        @click="toggleSidebar"
+      ></div>
+      
       <!-- 左侧面板 -->
-      <div class="sidebar" v-if="currentBook">
+      <div class="sidebar" v-if="currentBook" v-show="sidebarVisible">
         <el-tabs v-model="activeTab" type="border-card">
           <!-- 目录 -->
           <el-tab-pane label="目录" name="toc">
@@ -108,16 +123,18 @@
       </div>
       
       <!-- 阅读区域 -->
-      <div class="reading-area" v-if="currentBook">
+      <div class="reading-area" v-if="currentBook" :class="{ 'with-sidebar': sidebarVisible && isMobile }">
         <div class="chapter-header">
           <h2>{{ currentChapter?.title }}</h2>
         </div>
         
         <div
           class="chapter-content"
+          ref="contentRef"
           :style="{ fontSize: fontSize + 'px' }"
           v-html="highlightedContent"
-          ref="contentRef"
+          @touchstart="handleTouchStart"
+          @touchend="handleTouchEnd"
         ></div>
         
         <!-- 加载状态 -->
@@ -130,11 +147,16 @@
       <!-- 欢迎页面 -->
       <div v-else class="welcome-screen">
         <div class="welcome-content">
-          <el-icon size="64" color="#409eff"><Reading /></el-icon>
+          <el-icon :size="80" color="#409eff">
+            <Reading />
+          </el-icon>
           <h1>EPUB阅读器</h1>
-          <p>点击"打开EPUB文件"开始阅读</p>
-          <el-button @click="openFile" type="primary" size="large">
-            选择文件
+          <p>选择一个EPUB文件开始阅读</p>
+          <p v-if="isMobile" class="mobile-tip">
+            💡 移动端提示：左右滑动可以翻页，点击屏幕中央可以显示/隐藏控制栏
+          </p>
+          <el-button type="primary" @click="openFile" size="large">
+            打开EPUB文件
           </el-button>
         </div>
       </div>
@@ -173,6 +195,8 @@ import {
   FolderOpened,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   Plus,
   Minus,
   Moon,
@@ -196,6 +220,13 @@ const showBookmarkDialog = ref(false)
 const bookmarkName = ref('')
 const fileInput = ref(null)
 const contentRef = ref(null)
+const sidebarVisible = ref(true) // 侧边栏显示状态
+
+// 触摸手势相关
+const touchStartX = ref(0)
+const touchStartY = ref(0)
+const touchEndX = ref(0)
+const touchEndY = ref(0)
 
 // 计算属性
 const currentBook = computed(() => epubStore.currentBook)
@@ -308,6 +339,48 @@ const goToBookmark = (bookmark) => {
   epubStore.goToBookmark(bookmark)
 }
 
+// 切换侧边栏显示
+const toggleSidebar = () => {
+  sidebarVisible.value = !sidebarVisible.value
+}
+
+// 触摸开始
+const handleTouchStart = (event) => {
+  touchStartX.value = event.touches[0].clientX
+  touchStartY.value = event.touches[0].clientY
+}
+
+// 触摸结束
+const handleTouchEnd = (event) => {
+  touchEndX.value = event.changedTouches[0].clientX
+  touchEndY.value = event.changedTouches[0].clientY
+  handleSwipe()
+}
+
+// 处理滑动手势
+const handleSwipe = () => {
+  const deltaX = touchEndX.value - touchStartX.value
+  const deltaY = touchEndY.value - touchStartY.value
+  const minSwipeDistance = 50
+  
+  // 确保是水平滑动而不是垂直滑动
+  if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
+    if (deltaX > 0) {
+      // 向右滑动 - 上一章
+      prevChapter()
+    } else {
+      // 向左滑动 - 下一章
+      nextChapter()
+    }
+  }
+}
+
+// 检测是否为移动设备
+const isMobile = computed(() => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+         window.innerWidth <= 768
+})
+
 // 键盘快捷键
 const handleKeydown = (event) => {
   if (!currentBook.value) return
@@ -345,6 +418,11 @@ const handleKeydown = (event) => {
 onMounted(() => {
   settingsStore.loadSettings()
   document.addEventListener('keydown', handleKeydown)
+  
+  // 移动端默认收起侧边栏
+  if (isMobile.value) {
+    sidebarVisible.value = false
+  }
 })
 
 // 监听章节变化，加载书签
@@ -415,9 +493,20 @@ watch(currentBook, (newBook) => {
 }
 
 .main-content {
-  flex: 1;
   display: flex;
+  flex: 1;
   overflow: hidden;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.3);
+  z-index: 4;
+  backdrop-filter: blur(2px);
 }
 
 .sidebar {
@@ -617,29 +706,350 @@ watch(currentBook, (newBook) => {
         color: #999;
       }
     }
+    
+    .mobile-tip {
+      font-size: 14px;
+      color: #409eff;
+      background-color: #f0f9ff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 4px solid #409eff;
+      margin: 16px 0;
+      
+      .dark-theme & {
+        background-color: #1a2332;
+        color: #79bbff;
+        border-left-color: #79bbff;
+      }
+    }
   }
 }
 
 // 响应式设计
 @media (max-width: 768px) {
+  .epub-reader {
+    height: 100vh;
+    height: 100dvh; // 动态视口高度，避免移动端地址栏影响
+  }
+  
   .toolbar {
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+    padding: 8px 12px;
+    position: relative;
+    z-index: 10;
+    min-height: 120px; // 设置最小高度
     
     .toolbar-left,
     .toolbar-center,
     .toolbar-right {
       width: 100%;
       justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    
+    .toolbar-center {
+      order: 3; // 将进度信息放到最后
+    }
+    
+    .book-title {
+      font-size: 14px;
+      text-align: center;
+    }
+    
+    .chapter-progress {
+      font-size: 12px;
+    }
+    
+    // 移动端按钮优化
+    .el-button {
+      min-height: 44px; // 符合移动端触摸标准
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    
+    // 搜索框优化
+    .el-input {
+      max-width: 200px;
+    }
+  }
+  
+  .main-content {
+    flex-direction: column;
+    position: relative;
+  }
+  
+  .sidebar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 50vh;
+    border-right: none;
+    border-bottom: 1px solid #e4e7ed;
+    background-color: #fff;
+    z-index: 5;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    
+    .dark-theme & {
+      border-bottom-color: #3a3a3a;
+      background-color: #1a1a1a;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    // 移动端标签页优化
+    .el-tabs__header {
+      margin: 0;
+      
+      .el-tabs__nav {
+        display: flex;
+        justify-content: space-around;
+      }
+      
+      .el-tabs__item {
+        padding: 12px 8px;
+        font-size: 14px;
+        min-width: 0;
+        flex: 1;
+        text-align: center;
+      }
+    }
+    
+    .el-tabs__content {
+      padding: 8px;
+      max-height: calc(50vh - 60px);
+      overflow-y: auto;
+    }
+    
+    // 目录项优化
+    .toc-item {
+      padding: 12px 8px;
+      font-size: 14px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      
+      .chapter-number {
+        margin-right: 6px;
+        min-width: 24px;
+        font-size: 12px;
+      }
+      
+      .chapter-title {
+        line-height: 1.4;
+      }
+    }
+    
+    // 书签项优化
+    .bookmark-item {
+      padding: 12px 8px;
+      min-height: 44px;
+      
+      .bookmark-name {
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      
+      .bookmark-info {
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      
+      .el-button {
+        position: static;
+        opacity: 1;
+        margin-top: 8px;
+        align-self: flex-start;
+      }
+    }
+  }
+  
+  .reading-area {
+    transition: all 0.3s ease;
+    
+    // 当侧边栏显示时，为阅读区域添加上边距
+    &.with-sidebar {
+      margin-top: 50vh;
+      height: calc(50vh - 120px); // 减去工具栏高度
+      overflow: hidden;
+    }
+    
+    // 当侧边栏收起时，占满剩余空间
+    &:not(.with-sidebar) {
+      height: calc(100vh - 120px); // 减去工具栏高度
+    }
+    
+    .chapter-header {
+      padding: 12px 16px;
+      
+      h2 {
+        font-size: 18px;
+        line-height: 1.4;
+      }
+    }
+    
+    .chapter-content {
+      padding: 16px;
+      font-size: 16px;
+      line-height: 1.6;
+      
+      // 移动端文本优化
+      word-wrap: break-word;
+      word-break: break-word;
+      -webkit-hyphens: auto;
+      hyphens: auto;
+    }
+  }
+  
+  .welcome-screen {
+    padding: 20px;
+    
+    .welcome-content {
+      h1 {
+        font-size: 24px;
+        margin: 16px 0;
+      }
+      
+      p {
+        font-size: 14px;
+        line-height: 1.5;
+        margin-bottom: 20px;
+      }
+      
+      .el-button {
+        min-height: 44px;
+        padding: 12px 24px;
+        font-size: 16px;
+      }
+    }
+  }
+}
+
+// 小屏幕手机优化 (iPhone SE等)
+@media (max-width: 480px) {
+  .toolbar {
+    .toolbar-left,
+    .toolbar-center,
+    .toolbar-right {
+      .el-button {
+        padding: 6px 8px;
+        font-size: 12px;
+        min-height: 40px;
+      }
+      
+      .el-button-group .el-button {
+        padding: 6px 8px;
+      }
+    }
+    
+    .book-title {
+      font-size: 12px;
     }
   }
   
   .sidebar {
-    width: 250px;
+    max-height: 35vh;
+    
+    .el-tabs__content {
+      max-height: calc(35vh - 50px);
+    }
+    
+    .chapter-item,
+    .bookmark-item {
+      padding: 10px 6px;
+      min-height: 40px;
+    }
   }
   
-  .chapter-content {
-    padding: 20px;
+  .reading-area {
+    .chapter-header {
+      padding: 10px 12px;
+      
+      h2 {
+        font-size: 16px;
+      }
+    }
+    
+    .chapter-content {
+      padding: 12px;
+      font-size: 15px;
+    }
+  }
+}
+
+// 横屏模式优化
+@media (max-width: 768px) and (orientation: landscape) {
+  .main-content {
+    flex-direction: row;
+  }
+  
+  .sidebar {
+    width: 300px;
+    max-height: 100vh;
+    border-right: 1px solid #e4e7ed;
+    border-bottom: none;
+    
+    .dark-theme & {
+      border-right-color: #3a3a3a;
+      border-bottom: none;
+    }
+  }
+}
+
+// 触摸设备优化
+@media (hover: none) and (pointer: coarse) {
+  // 移除hover效果，使用active状态
+  .chapter-item:hover,
+  .bookmark-item:hover {
+    background-color: transparent;
+  }
+  
+  .chapter-item:active,
+  .bookmark-item:active {
+    background-color: #f5f7fa;
+    
+    .dark-theme & {
+      background-color: #3a3a3a;
+    }
+  }
+  
+  // 优化按钮触摸反馈
+  .el-button:active {
+    transform: scale(0.98);
+    transition: transform 0.1s;
+  }
+}
+
+// 桌面端样式 (确保不被移动端影响)
+@media (min-width: 769px) {
+  .reading-area {
+    // 重置移动端可能的影响
+    height: auto !important;
+    margin-top: 0 !important;
+    overflow: visible !important;
+    transition: none !important;
+    
+    .chapter-header {
+      padding: 20px 40px !important;
+      
+      h2 {
+        font-size: inherit !important;
+        line-height: inherit !important;
+        color: #303133 !important;
+        
+        .dark-theme & {
+          color: #e0e0e0 !important;
+        }
+      }
+    }
+    
+    .chapter-content {
+      padding: 40px !important;
+      font-size: inherit !important;
+      line-height: 1.8 !important;
+    }
   }
 }
 </style> 
