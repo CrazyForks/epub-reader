@@ -2,7 +2,8 @@
 
 一个基于Vue 3开发的功能完整的EPUB电子书阅读器，支持桌面端和移动端，提供优秀的阅读体验。
 
-![EPUB阅读器截图](https://via.placeholder.com/800x400/409eff/ffffff?text=EPUB%E9%98%85%E8%AF%BB%E5%99%A8)
+![深色](https://github.com/cnkanwei/epub-reader/blob/main/screenshoot/20250624161150.png?raw=true)
+![浅色](https://github.com/cnkanwei/epub-reader/blob/main/screenshoot/20250624161129.png?raw=true)
 
 ## ✨ 主要特性
 
