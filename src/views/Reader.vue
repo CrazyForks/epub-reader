@@ -1,7 +1,7 @@
 <template>
   <div class="epub-reader" :class="{ 'dark-theme': isDarkTheme }">
     <!-- 顶部工具栏 -->
-    <div class="toolbar">
+    <div class="toolbar" v-show="toolbarVisible">
       <div class="toolbar-left">
         <el-button @click="openFile" type="primary" :icon="FolderOpened">
           打开EPUB文件
@@ -73,10 +73,17 @@
       <!-- 左侧面板 -->
       <div 
         class="sidebar" 
-        v-if="currentBook" 
+        v-if="currentBook && !sidebarCollapsed" 
         v-show="sidebarVisible"
         :style="{ width: !isMobile ? sidebarWidth + 'px' : '100%' }"
       >
+        <div class="sidebar-header" v-if="isMobile">
+          <h3>目录</h3>
+          <el-button @click="toggleSidebar" size="small" :icon="ArrowUp">
+            收起
+          </el-button>
+        </div>
+        
         <el-tabs v-model="activeTab" type="border-card">
           <!-- 目录 -->
           <el-tab-pane label="目录" name="toc">
@@ -86,10 +93,15 @@
                 :key="chapter.id"
                 class="toc-item"
                 :class="{ active: index === currentChapterIndex }"
-                @click="goToChapter(index)"
+                @click="goToChapter(index); isMobile && toggleSidebar()"
               >
-                <span class="chapter-number">{{ index + 1 }}.</span>
-                <span class="chapter-title">{{ chapter.title }}</span>
+                <div class="chapter-info">
+                  <span class="chapter-number">{{ index + 1 }}.</span>
+                  <span class="chapter-title">{{ chapter.title }}</span>
+                </div>
+                <el-icon v-if="index === currentChapterIndex" class="current-indicator" color="#409eff">
+                  <ArrowRight />
+                </el-icon>
               </div>
             </div>
           </el-tab-pane>
@@ -101,21 +113,28 @@
                 v-for="bookmark in bookmarks"
                 :key="bookmark.id"
                 class="bookmark-item"
-                @dblclick="goToBookmark(bookmark)"
+                @click="goToBookmark(bookmark); isMobile && toggleSidebar()"
               >
-                <div class="bookmark-name">{{ bookmark.name }}</div>
-                <div class="bookmark-info">
-                  {{ bookmark.chapterTitle }}
+                <div class="bookmark-content">
+                  <div class="bookmark-name">{{ bookmark.name }}</div>
+                  <div class="bookmark-info">
+                    {{ bookmark.chapterTitle }}
+                  </div>
                 </div>
                 <el-button
                   size="small"
                   type="danger"
                   :icon="Delete"
                   @click.stop="removeBookmark(bookmark.id)"
+                  class="bookmark-delete"
                 />
               </div>
               <div v-if="bookmarks.length === 0" class="empty-bookmarks">
-                暂无书签
+                <el-icon size="48" color="#c0c4cc">
+                  <Star />
+                </el-icon>
+                <p>暂无书签</p>
+                <p class="tip">点击上方“添加书签”按钮来保存当前位置</p>
               </div>
             </div>
           </el-tab-pane>
@@ -135,8 +154,19 @@
         ></div>
       </div>
       
+      <!-- 悬浮按钮 -->
+      <div 
+        v-if="(!allControlsVisible || sidebarCollapsed) && currentBook" 
+        class="floating-button"
+        @click="toggleAllControls"
+      >
+        <el-icon size="20">
+          <Menu />
+        </el-icon>
+      </div>
+      
       <!-- 阅读区域 -->
-      <div class="reading-area" v-if="currentBook" :class="{ 'with-sidebar': sidebarVisible && isMobile }">
+      <div class="reading-area" v-if="currentBook" :class="{ 'with-sidebar': sidebarVisible && isMobile, 'full-screen': !toolbarVisible }">
         <div class="chapter-header">
           <h2>{{ currentChapter?.title }}</h2>
         </div>
@@ -217,7 +247,8 @@ import {
   Search,
   Star,
   Delete,
-  Reading
+  Reading,
+  Menu
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -234,6 +265,9 @@ const bookmarkName = ref('')
 const fileInput = ref(null)
 const contentRef = ref(null)
 const sidebarVisible = ref(true) // 侧边栏显示状态
+const sidebarCollapsed = ref(false) // 侧边栏是否已完全收起
+const toolbarVisible = ref(true) // 工具栏显示状态
+const allControlsVisible = ref(true) // 所有控制面板的显示状态
 
 // 触摸手势相关
 const touchStartX = ref(0)
@@ -293,16 +327,19 @@ const handleFileSelect = async (event) => {
   }
 }
 
-const nextChapter = () => {
-  epubStore.nextChapter()
+const nextChapter = async () => {
+  await epubStore.nextChapter()
+  scrollToTop()
 }
 
-const prevChapter = () => {
-  epubStore.prevChapter()
+const prevChapter = async () => {
+  await epubStore.prevChapter()
+  scrollToTop()
 }
 
-const goToChapter = (index) => {
-  epubStore.goToChapter(index)
+const goToChapter = async (index) => {
+  await epubStore.goToChapter(index)
+  scrollToTop()
 }
 
 const increaseFontSize = () => {
@@ -357,13 +394,61 @@ const removeBookmark = (bookmarkId) => {
   ElMessage.success('书签删除成功')
 }
 
-const goToBookmark = (bookmark) => {
-  epubStore.goToBookmark(bookmark)
+const goToBookmark = async (bookmark) => {
+  await epubStore.goToBookmark(bookmark)
+  scrollToTop()
+}
+
+// 滚动到页面顶部
+const scrollToTop = () => {
+  nextTick(() => {
+    if (contentRef.value) {
+      contentRef.value.scrollTop = 0
+    }
+  })
 }
 
 // 切换侧边栏显示
 const toggleSidebar = () => {
-  sidebarVisible.value = !sidebarVisible.value
+  if (isMobile.value) {
+    if (sidebarCollapsed.value) {
+      // 从完全收起状态展开
+      sidebarCollapsed.value = false
+      sidebarVisible.value = true
+    } else {
+      // 收起到完全隐藏状态
+      sidebarVisible.value = false
+      sidebarCollapsed.value = true
+    }
+  } else {
+    // 桌面端只切换显示/隐藏
+    sidebarVisible.value = !sidebarVisible.value
+  }
+}
+
+// 切换所有控制面板的显示
+const toggleAllControls = () => {
+  if (!allControlsVisible.value) {
+    // 展开所有控制面板
+    allControlsVisible.value = true
+    toolbarVisible.value = true
+    if (isMobile.value) {
+      sidebarVisible.value = true
+      sidebarCollapsed.value = false
+    } else {
+      sidebarVisible.value = true
+    }
+  } else {
+    // 收起所有控制面板
+    allControlsVisible.value = false
+    toolbarVisible.value = false
+    sidebarVisible.value = false
+    if (isMobile.value) {
+      sidebarCollapsed.value = true
+    }
+    // 如果有展开的子操作（如语音面板），也一起收起
+    activeTab.value = 'toc'
+  }
 }
 
 // 触摸开始
@@ -380,7 +465,7 @@ const handleTouchEnd = (event) => {
 }
 
 // 处理滑动手势
-const handleSwipe = () => {
+const handleSwipe = async () => {
   const deltaX = touchEndX.value - touchStartX.value
   const deltaY = touchEndY.value - touchStartY.value
   const minSwipeDistance = 50
@@ -389,10 +474,10 @@ const handleSwipe = () => {
   if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
     if (deltaX > 0) {
       // 向右滑动 - 上一章
-      prevChapter()
+      await prevChapter()
     } else {
       // 向左滑动 - 下一章
-      nextChapter()
+      await nextChapter()
     }
   }
 }
@@ -404,19 +489,19 @@ const isMobile = computed(() => {
 })
 
 // 键盘快捷键
-const handleKeydown = (event) => {
+const handleKeydown = async (event) => {
   if (!currentBook.value) return
   
   switch (event.key) {
     case 'ArrowLeft':
       if (event.ctrlKey) {
-        prevChapter()
+        await prevChapter()
         event.preventDefault()
       }
       break
     case 'ArrowRight':
       if (event.ctrlKey) {
-        nextChapter()
+        await nextChapter()
         event.preventDefault()
       }
       break
@@ -448,6 +533,10 @@ onMounted(() => {
   // 移动端默认收起侧边栏
   if (isMobile.value) {
     sidebarVisible.value = false
+    sidebarCollapsed.value = true
+    // 移动端默认显示工具栏
+    toolbarVisible.value = true
+    allControlsVisible.value = true
   }
   
   // 从本地存储恢复侧边栏宽度
@@ -662,6 +751,43 @@ const stopResize = () => {
   overflow: hidden;
 }
 
+// 悬浮按钮样式
+.floating-button {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  background-color: #409eff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
+  cursor: pointer;
+  z-index: 1001; // 确保在全屏阅读时也能显示
+  transition: all 0.3s ease;
+  color: white;
+  
+  &:hover {
+    background-color: #337ecc;
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(64, 158, 255, 0.6);
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+  
+  .dark-theme & {
+    background-color: #79bbff;
+    
+    &:hover {
+      background-color: #a0cfff;
+    }
+  }
+}
+
 .sidebar-overlay {
   position: fixed;
   top: 0;
@@ -682,6 +808,31 @@ const stopResize = () => {
   .dark-theme & {
     border-right-color: #3a3a3a;
     background-color: #1a1a1a;
+  }
+  
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e4e7ed;
+    background-color: #f8f9fa;
+    
+    .dark-theme & {
+      border-bottom-color: #3a3a3a;
+      background-color: #2a2a2a;
+    }
+    
+    h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 500;
+      color: #303133;
+      
+      .dark-theme & {
+        color: #e0e0e0;
+      }
+    }
   }
   
   // Element Plus 标签页深色模式样式
@@ -784,17 +935,27 @@ const stopResize = () => {
 .toc-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  justify-content: space-between;
+  padding: 12px;
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
+  transition: all 0.3s ease;
+  border-radius: 6px;
+  margin-bottom: 4px;
   
   &:hover {
     background-color: #f5f7fa;
+    transform: translateX(4px);
   }
   
   &.active {
     background-color: #409eff;
     color: white;
+    box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+    
+    &:hover {
+      background-color: #337ecc;
+    }
   }
   
   .dark-theme & {
@@ -803,19 +964,38 @@ const stopResize = () => {
     &:hover {
       background-color: #3a3a3a;
     }
+    
+    &.active {
+      background-color: #79bbff;
+    }
   }
   
-  .chapter-number {
-    margin-right: 8px;
-    font-weight: 500;
-    min-width: 30px;
-  }
-  
-  .chapter-title {
+  .chapter-info {
+    display: flex;
+    align-items: center;
     flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    
+    .chapter-number {
+      margin-right: 8px;
+      font-weight: 500;
+      min-width: 30px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    
+    .chapter-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+  }
+  
+  .current-indicator {
+    margin-left: 8px;
+    opacity: 0.8;
   }
 }
 
@@ -826,16 +1006,19 @@ const stopResize = () => {
 
 .bookmark-item {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   padding: 12px;
   border-bottom: 1px solid #f0f0f0;
   cursor: pointer;
-  position: relative;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  transition: all 0.3s ease;
   
   &:hover {
     background-color: #f5f7fa;
+    transform: translateX(4px);
     
-    .el-button {
+    .bookmark-delete {
       opacity: 1;
     }
   }
@@ -848,33 +1031,72 @@ const stopResize = () => {
     }
   }
   
-  .bookmark-name {
-    font-weight: 500;
-    margin-bottom: 4px;
-  }
-  
-  .bookmark-info {
-    font-size: 12px;
-    color: #666;
+  .bookmark-content {
+    flex: 1;
+    min-width: 0;
     
-    .dark-theme & {
-      color: #999;
+    .bookmark-name {
+      font-weight: 500;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #303133;
+      
+      .dark-theme & {
+        color: #e0e0e0;
+      }
+    }
+    
+    .bookmark-info {
+      font-size: 12px;
+      color: #666;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      
+      .dark-theme & {
+        color: #999;
+      }
     }
   }
   
-  .el-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
+  .bookmark-delete {
     opacity: 0;
     transition: opacity 0.3s;
+    flex-shrink: 0;
+    margin-left: 8px;
   }
 }
 
 .empty-bookmarks {
-  text-align: center;
-  color: #999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 40px 20px;
+  color: #999;
+  
+  p {
+    margin: 8px 0 0 0;
+    font-size: 14px;
+    
+    &.tip {
+      font-size: 12px;
+      color: #c0c4cc;
+      margin-top: 12px;
+      text-align: center;
+      line-height: 1.4;
+    }
+  }
+  
+  .dark-theme & {
+    color: #666;
+    
+    p.tip {
+      color: #666;
+    }
+  }
 }
 
 .reading-area {
@@ -882,6 +1104,17 @@ const stopResize = () => {
   display: flex;
   flex-direction: column;
   position: relative;
+  
+  // 全屏模式（工具栏隐藏时）
+  &.full-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    background-color: inherit;
+  }
   
   .chapter-header {
     padding: 20px 40px;
@@ -1201,17 +1434,25 @@ const stopResize = () => {
     left: 0;
     right: 0;
     width: 100%;
-    max-height: 50vh;
+    max-height: 60vh;
     border-right: none;
     border-bottom: 1px solid #e4e7ed;
     background-color: #fff;
     z-index: 5;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 0 0 12px 12px;
     
     .dark-theme & {
       border-bottom-color: #3a3a3a;
       background-color: #1a1a1a;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .sidebar-header {
+      border-radius: 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
     
     // 移动端标签页优化
@@ -1233,50 +1474,93 @@ const stopResize = () => {
     }
     
     .el-tabs__content {
-      padding: 8px;
-      max-height: calc(50vh - 60px);
+      padding: 12px;
+      max-height: calc(60vh - 140px);
       overflow-y: auto;
+      
+      // 优化滚动条样式
+      &::-webkit-scrollbar {
+        width: 4px;
+      }
+      
+      &::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 2px;
+      }
+      
+      &::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 2px;
+        
+        &:hover {
+          background: #a8a8a8;
+        }
+      }
+      
+      .dark-theme & {
+        &::-webkit-scrollbar-track {
+          background: #2a2a2a;
+        }
+        
+        &::-webkit-scrollbar-thumb {
+          background: #4a4a4a;
+          
+          &:hover {
+            background: #6a6a6a;
+          }
+        }
+      }
     }
     
     // 目录项优化
     .toc-item {
-      padding: 12px 8px;
+      padding: 16px 12px;
       font-size: 14px;
-      min-height: 44px;
-      display: flex;
-      align-items: center;
+      min-height: 48px;
+      margin-bottom: 2px;
       
-      .chapter-number {
-        margin-right: 6px;
-        min-width: 24px;
-        font-size: 12px;
+      .chapter-info {
+        .chapter-number {
+          margin-right: 6px;
+          min-width: 24px;
+          font-size: 12px;
+        }
+        
+        .chapter-title {
+          line-height: 1.4;
+          font-size: 14px;
+        }
       }
       
-      .chapter-title {
-        line-height: 1.4;
+      .current-indicator {
+        margin-left: 4px;
       }
     }
     
     // 书签项优化
     .bookmark-item {
-      padding: 12px 8px;
-      min-height: 44px;
+      padding: 16px 12px;
+      min-height: 48px;
+      margin-bottom: 2px;
       
-      .bookmark-name {
-        font-size: 14px;
-        line-height: 1.4;
+      .bookmark-content {
+        .bookmark-name {
+          font-size: 14px;
+          line-height: 1.4;
+        }
+        
+        .bookmark-info {
+          font-size: 12px;
+          margin-top: 4px;
+        }
       }
       
-      .bookmark-info {
-        font-size: 11px;
-        margin-top: 2px;
-      }
-      
-      .el-button {
-        position: static;
+      .bookmark-delete {
         opacity: 1;
-        margin-top: 8px;
-        align-self: flex-start;
+        position: static;
+        margin-left: 8px;
+        min-width: 32px;
+        height: 32px;
       }
     }
   }
@@ -1286,14 +1570,20 @@ const stopResize = () => {
     
     // 当侧边栏显示时，为阅读区域添加上边距
     &.with-sidebar {
-      margin-top: 50vh;
-      height: calc(50vh - 120px); // 减去工具栏高度
+      margin-top: 60vh;
+      height: calc(40vh - 120px); // 减去工具栏高度
       overflow: hidden;
     }
     
     // 当侧边栏收起时，占满剩余空间
     &:not(.with-sidebar) {
       height: calc(100vh - 120px); // 减去工具栏高度
+    }
+    
+    // 全屏模式（工具栏隐藏时）
+    &.full-screen {
+      height: 100vh;
+      height: 100dvh; // 动态视口高度
     }
     
     .chapter-header {
