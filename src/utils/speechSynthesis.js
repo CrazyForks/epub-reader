@@ -31,6 +31,8 @@ export class SpeechSynthesisManager {
     this.isMobile = this.detectMobile()
     this.isIOS = this.detectIOS()
     this.isAndroid = this.detectAndroid()
+    this.isHuawei = this.detectHuawei()
+    this.isHuaweiBrowser = this.detectHuaweiBrowser()
     
     // 备用方案状态
     this.fallbackMode = false
@@ -59,6 +61,26 @@ export class SpeechSynthesisManager {
    */
   detectAndroid() {
     return /Android/i.test(navigator.userAgent)
+  }
+  
+  /**
+   * 检测华为设备
+   */
+  detectHuawei() {
+    const userAgent = navigator.userAgent.toLowerCase()
+    return userAgent.includes('huawei') || 
+           userAgent.includes('honor') || 
+           userAgent.includes('hisilicon') ||
+           userAgent.includes('harmonyos')
+  }
+  
+  /**
+   * 检测华为浏览器
+   */
+  detectHuaweiBrowser() {
+    const userAgent = navigator.userAgent.toLowerCase()
+    return userAgent.includes('huaweibrowser') ||
+           userAgent.includes('hbrowser')
   }
   
   /**
@@ -120,6 +142,16 @@ export class SpeechSynthesisManager {
     if (this.isAndroid) {
       this.setupAndroidSupport()
     }
+    
+    // 华为设备的特殊处理
+    if (this.isHuawei) {
+      this.setupHuaweiSupport()
+    }
+    
+    // 华为浏览器的特殊处理
+    if (this.isHuaweiBrowser) {
+      this.setupHuaweiBrowserSupport()
+    }
   }
   
   /**
@@ -148,6 +180,228 @@ export class SpeechSynthesisManager {
     // Android Chrome 可能需要特殊的语音设置
     // 某些版本的Chrome可能不支持中文语音
     this.checkAndroidVoiceSupport()
+    
+    // 添加用户手势激活机制
+    this.setupUserGestureActivation()
+  }
+  
+  /**
+   * 设置华为设备支持
+   */
+  setupHuaweiSupport() {
+    console.log('检测到华为设备，启用特殊兼容模式')
+    
+    // 华为设备通常需要更长的初始化时间
+    this.setupDelayedInitialization()
+    
+    // 华为浏览器可能需要多次尝试才能获取语音列表
+    this.setupMultipleVoiceLoadAttempts()
+    
+    // 用户手势激活
+    this.setupUserGestureActivation()
+    
+    // 华为设备的语音引擎检查
+    this.checkHuaweiVoiceSupport()
+  }
+  
+  /**
+   * 设置延迟初始化
+   */
+  setupDelayedInitialization() {
+    // 华为设备可能需要更长时间来初始化语音引擎
+    const delays = [500, 1000, 2000, 3000, 5000]
+    
+    delays.forEach(delay => {
+      setTimeout(() => {
+        if (this.voices.length === 0) {
+          console.log(`华为设备延迟加载语音列表: ${delay}ms`)
+          this.loadVoices()
+        }
+      }, delay)
+    })
+  }
+  
+  /**
+   * 设置多次语音加载尝试
+   */
+  setupMultipleVoiceLoadAttempts() {
+    let attempts = 0
+    const maxAttempts = 10
+    
+    const attemptLoad = () => {
+      attempts++
+      if (attempts > maxAttempts) {
+        console.warn('华为设备语音加载尝试次数已达上限')
+        return
+      }
+      
+      if (this.synthesis && this.voices.length === 0) {
+        console.log(`华为设备语音加载尝试 ${attempts}/${maxAttempts}`)
+        this.loadVoices()
+        
+        setTimeout(() => {
+          if (this.voices.length === 0) {
+            attemptLoad()
+          }
+        }, 1000)
+      }
+    }
+    
+    // 开始尝试
+    setTimeout(attemptLoad, 2000)
+  }
+  
+  /**
+   * 设置用户手势激活
+   */
+  setupUserGestureActivation() {
+    const activateSpeech = () => {
+      if (this.synthesis && this.voices.length === 0) {
+        console.log('用户手势激活语音功能')
+        
+        // 创建一个极短的静音utterance来激活语音引擎
+        try {
+          const utterance = new SpeechSynthesisUtterance(' ')
+          utterance.volume = 0.01
+          utterance.rate = 2
+          utterance.pitch = 0.1
+          
+          utterance.onend = () => {
+            // 激活后重新加载语音列表
+            setTimeout(() => {
+              this.loadVoices()
+            }, 200)
+          }
+          
+          utterance.onerror = () => {
+            // 即使出错也尝试重新加载
+            setTimeout(() => {
+              this.loadVoices()
+            }, 500)
+          }
+          
+          this.synthesis.speak(utterance)
+        } catch (error) {
+          console.warn('用户手势激活失败:', error)
+        }
+      }
+    }
+    
+    // 监听多种用户交互事件
+    const events = ['touchstart', 'touchend', 'click', 'tap', 'mousedown']
+    events.forEach(event => {
+      document.addEventListener(event, activateSpeech, { once: true, passive: true })
+    })
+  }
+  
+  /**
+   * 检查华为设备语音支持
+   */
+  checkHuaweiVoiceSupport() {
+    setTimeout(() => {
+      const voices = this.synthesis?.getVoices() || []
+      
+      if (voices.length === 0) {
+        this.fallbackMessage = '华为设备语音引擎可能需要手动激活。请点击任意按钮后再尝试使用语音功能。'
+        console.log('华为设备暂未检测到语音引擎')
+        return
+      }
+      
+      const hasChineseVoice = voices.some(voice => 
+        voice.lang.includes('zh') || 
+        voice.name.toLowerCase().includes('chinese') ||
+        voice.name.includes('中文') ||
+        voice.name.includes('普通话')
+      )
+      
+      if (!hasChineseVoice) {
+        this.fallbackMessage = '华为设备可能需要在设置中启用中文语音引擎。请前往 设置 > 智慧助手 > 智慧语音 > 语音合成 中检查语音设置。'
+      } else {
+        console.log('华为设备语音支持正常')
+      }
+    }, 3000)
+  }
+  
+  /**
+   * 设置华为浏览器支持
+   */
+  setupHuaweiBrowserSupport() {
+    console.log('检测到华为浏览器，启用特殊兼容模式')
+    
+    // 华为浏览器可能需要特殊的API权限请求
+    this.requestHuaweiBrowserPermissions()
+    
+    // 华为浏览器的语音初始化可能需要更多时间
+    this.setupExtendedInitialization()
+    
+    // 华为浏览器可能需要特殊的语音设置
+    this.setupHuaweiBrowserVoiceSettings()
+  }
+  
+  /**
+   * 请求华为浏览器权限
+   */
+  requestHuaweiBrowserPermissions() {
+    // 华为浏览器可能需要明确的权限请求
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: 'microphone' }).then(result => {
+        console.log('华为浏览器麦克风权限状态:', result.state)
+      }).catch(error => {
+        console.log('华为浏览器权限查询失败:', error)
+      })
+    }
+  }
+  
+  /**
+   * 设置扩展初始化
+   */
+  setupExtendedInitialization() {
+    // 华为浏览器可能需要更长的初始化序列
+    const extendedDelays = [1000, 3000, 5000, 8000, 10000]
+    
+    extendedDelays.forEach(delay => {
+      setTimeout(() => {
+        if (this.voices.length === 0) {
+          console.log(`华为浏览器扩展初始化: ${delay}ms`)
+          
+          // 尝试重新检查语音API
+          if (this.synthesis) {
+            // 触发voiceschanged事件
+            if (typeof this.synthesis.onvoiceschanged === 'function') {
+              this.synthesis.onvoiceschanged()
+            }
+            
+            // 强制重新加载
+            this.loadVoices()
+          }
+        }
+      }, delay)
+    })
+  }
+  
+  /**
+   * 设置华为浏览器语音设置
+   */
+  setupHuaweiBrowserVoiceSettings() {
+    // 华为浏览器可能有特殊的语音配置要求
+    setTimeout(() => {
+      if (this.synthesis) {
+        // 尝试设置华为浏览器的特殊属性
+        try {
+          // 某些华为浏览器版本可能需要这些设置
+          if ('getVoices' in this.synthesis) {
+            this.synthesis.getVoices()
+          }
+          
+          // 强制触发语音列表更新
+          const event = new Event('voiceschanged')
+          this.synthesis.dispatchEvent(event)
+          
+        } catch (error) {
+          console.warn('华为浏览器语音设置失败:', error)
+        }
+      }
+    }, 2000)
   }
   
   /**
@@ -170,23 +424,46 @@ export class SpeechSynthesisManager {
    * 加载可用语音
    */
   loadVoices() {
-    if (!this.synthesis) return
+    if (!this.synthesis) {
+      console.warn('语音合成API不可用')
+      return
+    }
     
     try {
       const voices = this.synthesis.getVoices()
       
-      // 如果语音列表为空，不要立即设置为fallback模式
+      // 如果语音列表为空，记录但不立即设置为fallback模式
       if (voices.length === 0) {
         console.log('语音列表为空，等待加载...')
+        
+        // 华为设备特殊处理：尝试触发语音加载
+        if (this.isHuawei) {
+          this.triggerVoiceLoading()
+        }
         return
       }
       
-      this.voices = voices
-      console.log(`加载到 ${voices.length} 个语音:`, voices.map(v => v.name))
+      // 过滤掉无效的语音
+      const validVoices = voices.filter(voice => {
+        return voice && voice.name && voice.lang
+      })
+      
+      if (validVoices.length === 0) {
+        console.warn('没有有效的语音可用')
+        return
+      }
+      
+      this.voices = validVoices
+      console.log(`加载到 ${validVoices.length} 个有效语音:`, validVoices.map(v => `${v.name} (${v.lang})`))
       
       // 移动端语音过滤和优化
       if (this.isMobile) {
         this.optimizeVoicesForMobile()
+      }
+      
+      // 华为设备特殊优化
+      if (this.isHuawei) {
+        this.optimizeVoicesForHuawei()
       }
       
       // 如果之前是fallback模式但现在有语音了，重置状态
@@ -196,27 +473,131 @@ export class SpeechSynthesisManager {
         console.log('语音引擎已恢复正常')
       }
       
-      // 优先选择中文语音
-      const chineseVoice = this.voices.find(voice => 
-        voice.lang.includes('zh') || voice.name.toLowerCase().includes('chinese')
-      )
-      
-      if (chineseVoice) {
-        this.selectedVoice = chineseVoice
-        console.log('选择中文语音:', chineseVoice.name)
-      } else if (this.voices.length > 0) {
-        this.selectedVoice = this.voices[0]
-        console.log('选择默认语音:', this.voices[0].name)
-        
-        // 如果没有中文语音，设置警告信息但不设为fallback模式
-        if (this.isMobile) {
-          this.fallbackMessage = '未找到中文语音，将使用默认语音。建议在系统设置中安装中文语音包。'
-        }
-      }
+      // 智能选择语音
+      this.selectBestVoice()
       
     } catch (error) {
       console.warn('加载语音列表失败:', error)
-      // 不要因为一次失败就设置为fallback模式，可能下次会成功
+      
+      // 华为设备的特殊错误处理
+      if (this.isHuawei) {
+        setTimeout(() => {
+          console.log('华为设备延迟重试加载语音...')
+          this.loadVoices()
+        }, 2000)
+      }
+    }
+  }
+  
+  /**
+   * 触发语音加载（华为设备专用）
+   */
+  triggerVoiceLoading() {
+    try {
+      // 创建一个极短的utterance来触发语音引擎
+      const utterance = new SpeechSynthesisUtterance('')
+      utterance.volume = 0
+      utterance.rate = 10
+      
+      utterance.onend = () => {
+        setTimeout(() => {
+          const voices = this.synthesis?.getVoices() || []
+          if (voices.length > 0) {
+            console.log('华为设备语音触发成功')
+            this.loadVoices()
+          }
+        }, 100)
+      }
+      
+      utterance.onerror = () => {
+        // 忽略触发错误
+      }
+      
+      this.synthesis.speak(utterance)
+    } catch (error) {
+      console.warn('华为设备语音触发失败:', error)
+    }
+  }
+  
+  /**
+   * 华为设备语音优化
+   */
+  optimizeVoicesForHuawei() {
+    // 优先保留华为自带的语音引擎
+    this.voices.sort((a, b) => {
+      const aIsHuawei = a.name.toLowerCase().includes('huawei') || 
+                       a.name.toLowerCase().includes('hisilicon')
+      const bIsHuawei = b.name.toLowerCase().includes('huawei') || 
+                       b.name.toLowerCase().includes('hisilicon')
+      
+      if (aIsHuawei && !bIsHuawei) return -1
+      if (!aIsHuawei && bIsHuawei) return 1
+      
+      // 其次优先本地语音
+      if (a.localService && !b.localService) return -1
+      if (!a.localService && b.localService) return 1
+      
+      return 0
+    })
+    
+    console.log('华为设备语音优化完成')
+  }
+  
+  /**
+   * 智能选择最佳语音
+   */
+  selectBestVoice() {
+    if (this.voices.length === 0) return
+    
+    // 定义中文语音的匹配模式
+    const chinesePatterns = [
+      /zh/i,
+      /chinese/i,
+      /中文/,
+      /普通话/,
+      /mandarin/i,
+      /cantonese/i,
+      /taiwan/i,
+      /simplified/i,
+      /traditional/i
+    ]
+    
+    // 查找最佳中文语音
+    const chineseVoices = this.voices.filter(voice => {
+      return chinesePatterns.some(pattern => 
+        pattern.test(voice.lang) || pattern.test(voice.name)
+      )
+    })
+    
+    if (chineseVoices.length > 0) {
+      // 优先选择本地语音
+      const localChineseVoice = chineseVoices.find(voice => voice.localService)
+      if (localChineseVoice) {
+        this.selectedVoice = localChineseVoice
+        console.log('选择本地中文语音:', localChineseVoice.name)
+      } else {
+        this.selectedVoice = chineseVoices[0]
+        console.log('选择中文语音:', chineseVoices[0].name)
+      }
+    } else if (this.voices.length > 0) {
+      // 没有中文语音，选择默认语音
+      const localVoice = this.voices.find(voice => voice.localService)
+      if (localVoice) {
+        this.selectedVoice = localVoice
+        console.log('选择本地默认语音:', localVoice.name)
+      } else {
+        this.selectedVoice = this.voices[0]
+        console.log('选择默认语音:', this.voices[0].name)
+      }
+      
+      // 设置警告信息
+      if (this.isMobile) {
+        if (this.isHuawei) {
+          this.fallbackMessage = '未找到中文语音。请在"设置 > 智慧助手 > 智慧语音 > 语音合成"中安装中文语音包。'
+        } else {
+          this.fallbackMessage = '未找到中文语音，将使用默认语音。建议在系统设置中安装中文语音包。'
+        }
+      }
     }
   }
   
@@ -285,16 +666,26 @@ export class SpeechSynthesisManager {
     // 实时检查语音可用性
     if (!this.checkVoiceAvailability()) {
       console.log('语音不可用，尝试重新加载...')
+      
+      // 华为设备需要更长的等待时间
+      const waitTime = this.isHuawei ? 2000 : 500
+      
       this.forceReloadVoices()
       
       // 给一点时间让语音加载
       setTimeout(() => {
         if (!this.checkVoiceAvailability()) {
           this.fallbackMode = true
-          this.fallbackMessage = '没有可用的语音引擎，请检查系统语音设置'
+          
+          if (this.isHuawei) {
+            this.fallbackMessage = '华为设备的语音引擎可能需要手动激活。请尝试点击页面任意位置，然后重新检测语音功能。'
+          } else {
+            this.fallbackMessage = '没有可用的语音引擎，请检查系统语音设置'
+          }
+          
           this.showFallbackMessage()
         }
-      }, 500)
+      }, waitTime)
       
       return false
     }
@@ -341,6 +732,11 @@ export class SpeechSynthesisManager {
     if (this.isIOS) {
       suggestions.push('在iOS设备上，请确保在"设置 > 辅助功能 > 朗读内容"中启用了"朗读所选项"')
       suggestions.push('尝试在Safari浏览器中打开本应用')
+    } else if (this.isHuawei) {
+      suggestions.push('华为设备请在"设置 > 智慧助手 > 智慧语音 > 语音合成"中启用语音引擎')
+      suggestions.push('确保已安装华为语音引擎或Google文字转语音引擎')
+      suggestions.push('尝试在华为浏览器或Chrome浏览器中打开本应用')
+      suggestions.push('如果仍无法使用，请尝试点击页面任意位置后再试')
     } else if (this.isAndroid) {
       suggestions.push('在Android设备上，请在"设置 > 语言和输入法 > 文字转语音输出"中安装中文语音包')
       suggestions.push('推荐安装Google文字转语音引擎')
@@ -580,14 +976,50 @@ export class SpeechSynthesisManager {
     console.log('强制重新加载语音列表...')
     this.fallbackMode = false
     this.fallbackMessage = ''
+    this.voices = [] // 清空现有语音列表
+    
+    // 立即尝试加载
     this.loadVoices()
     
-    // 如果立即加载失败，延迟重试
-    setTimeout(() => {
-      if (this.voices.length === 0) {
-        this.loadVoices()
+    // 华为设备使用更激进的重试策略
+    if (this.isHuawei) {
+      this.setupAggressiveRetry()
+    } else {
+      // 普通设备的延迟重试
+      setTimeout(() => {
+        if (this.voices.length === 0) {
+          this.loadVoices()
+        }
+      }, 1000)
+    }
+  }
+  
+  /**
+   * 设置激进的重试策略（用于华为设备）
+   */
+  setupAggressiveRetry() {
+    const retryDelays = [200, 500, 1000, 2000, 3000, 5000]
+    let retryCount = 0
+    
+    const retry = () => {
+      if (retryCount >= retryDelays.length) {
+        console.warn('华为设备语音加载重试已达上限')
+        return
       }
-    }, 1000)
+      
+      if (this.voices.length === 0) {
+        console.log(`华为设备语音重试 ${retryCount + 1}/${retryDelays.length}`)
+        this.loadVoices()
+        
+        retryCount++
+        if (retryCount < retryDelays.length) {
+          setTimeout(retry, retryDelays[retryCount])
+        }
+      }
+    }
+    
+    // 开始重试序列
+    setTimeout(retry, retryDelays[0])
   }
   
   /**

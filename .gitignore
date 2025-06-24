@@ -136,3 +136,6 @@ test-book.epub
 # Temporary files
 *.tmp
 *.temp 
+
+.claude
+CLAUDE.md

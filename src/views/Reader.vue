@@ -555,6 +555,22 @@ const stopResize = () => {
       font-weight: 500;
       color: #409eff;
     }
+    
+    // 深色模式下的按钮样式
+    .dark-theme & {
+      :deep(.el-button) {
+        &:not(.el-button--primary) {
+          background-color: #2d2d2d;
+          border-color: #4c4d4f;
+          color: #e0e0e0;
+          
+          &:hover {
+            background-color: #3a3a3a;
+            border-color: #79bbff;
+          }
+        }
+      }
+    }
   }
   
   .toolbar-center {
@@ -570,12 +586,73 @@ const stopResize = () => {
         color: #999;
       }
     }
+    
+    // 深色模式下的按钮样式
+    .dark-theme & {
+      :deep(.el-button) {
+        &:not(.el-button--primary):not(:disabled) {
+          background-color: #2d2d2d;
+          border-color: #4c4d4f;
+          color: #e0e0e0;
+          
+          &:hover {
+            background-color: #3a3a3a;
+            border-color: #79bbff;
+          }
+        }
+        
+        &:disabled {
+          background-color: #1a1a1a;
+          border-color: #2a2a2a;
+          color: #666;
+        }
+      }
+    }
   }
   
   .toolbar-right {
     display: flex;
     align-items: center;
     gap: 12px;
+    
+    // 深色模式下的按钮样式
+    .dark-theme & {
+      :deep(.el-button) {
+        &:not(.el-button--primary) {
+          background-color: #2d2d2d;
+          border-color: #4c4d4f;
+          color: #e0e0e0;
+          
+          &:hover {
+            background-color: #3a3a3a;
+            border-color: #79bbff;
+          }
+        }
+      }
+      
+      :deep(.el-input) {
+        .el-input__wrapper {
+          background-color: #2d2d2d;
+          border-color: #4c4d4f;
+          
+          &:hover {
+            border-color: #79bbff;
+          }
+          
+          &.is-focus {
+            border-color: #409eff;
+          }
+          
+          .el-input__inner {
+            color: #e0e0e0;
+            
+            &::placeholder {
+              color: #999;
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -600,9 +677,50 @@ const stopResize = () => {
   width: 300px;
   border-right: 1px solid #e4e7ed;
   position: relative; // 为拖拽手柄定位
+  background-color: #fff;
   
   .dark-theme & {
     border-right-color: #3a3a3a;
+    background-color: #1a1a1a;
+  }
+  
+  // Element Plus 标签页深色模式样式
+  .dark-theme & {
+    :deep(.el-tabs--border-card) {
+      background-color: #1a1a1a;
+      border-color: #3a3a3a;
+      
+      .el-tabs__header {
+        background-color: #2a2a2a;
+        border-bottom-color: #3a3a3a;
+      }
+      
+      .el-tabs__nav {
+        border-color: #3a3a3a;
+      }
+      
+      .el-tabs__item {
+        background-color: #2a2a2a;
+        border-color: #3a3a3a;
+        color: #e0e0e0;
+        
+        &:hover {
+          background-color: #3a3a3a;
+          color: #79bbff;
+        }
+        
+        &.is-active {
+          background-color: #1a1a1a;
+          color: #409eff;
+          border-bottom-color: #1a1a1a;
+        }
+      }
+      
+      .el-tabs__content {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+      }
+    }
   }
   
   // 拖拽手柄样式
@@ -643,6 +761,17 @@ const stopResize = () => {
     &:hover::after,
     &.resizing::after {
       background-color: #409eff;
+    }
+    
+    .dark-theme & {
+      &::after {
+        background-color: #666;
+      }
+      
+      &:hover::after,
+      &.resizing::after {
+        background-color: #79bbff;
+      }
     }
   }
 }
@@ -838,6 +967,26 @@ const stopResize = () => {
     
     em, i {
       font-style: italic;
+    }
+    
+    // 链接样式
+    a {
+      color: #409eff;
+      text-decoration: none;
+      transition: color 0.3s;
+      
+      &:hover {
+        color: #79bbff;
+        text-decoration: underline;
+      }
+      
+      .dark-theme & {
+        color: #79bbff;
+        
+        &:hover {
+          color: #a0cfff;
+        }
+      }
     }
     
     // 桌面端图片样式
@@ -1266,6 +1415,47 @@ const stopResize = () => {
         padding: 12px 24px;
         font-size: 16px;
       }
+    }
+  }
+  
+  // Dialog深色模式样式
+  .dark-theme :deep(.el-dialog) {
+    background-color: #2d2d2d;
+    border: 1px solid #4c4d4f;
+    
+    .el-dialog__header {
+      background-color: #2a2a2a;
+      border-bottom: 1px solid #4c4d4f;
+      
+      .el-dialog__title {
+        color: #e0e0e0;
+      }
+      
+      .el-dialog__headerbtn {
+        .el-dialog__close {
+          color: #e0e0e0;
+          
+          &:hover {
+            color: #79bbff;
+          }
+        }
+      }
+    }
+    
+    .el-dialog__body {
+      background-color: #2d2d2d;
+      color: #e0e0e0;
+    }
+    
+    .el-dialog__footer {
+      background-color: #2a2a2a;
+      border-top: 1px solid #4c4d4f;
+    }
+  }
+  
+  .dark-theme :deep(.el-form) {
+    .el-form-item__label {
+      color: #e0e0e0;
     }
   }
 }

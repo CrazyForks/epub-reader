@@ -68,6 +68,30 @@
         />
       </div>
       
+      <!-- 华为设备特殊提示 -->
+      <div v-if="isHuawei && needsActivation" class="huawei-activation-tip">
+        <el-card class="activation-card" shadow="hover">
+          <template #header>
+            <div class="activation-header">
+              <span class="activation-icon">🎯</span>
+              <span>华为设备语音激活</span>
+            </div>
+          </template>
+          <div class="activation-content">
+            <p>华为设备的语音功能可能需要手动激活：</p>
+            <el-button 
+              type="primary" 
+              @click="activateHuaweiSpeech"
+              :loading="isActivating"
+              class="activation-button"
+            >
+              {{ isActivating ? '正在激活...' : '点击激活语音功能' }}
+            </el-button>
+            <p class="activation-note">激活后请等待几秒钟，然后尝试使用语音朗读功能</p>
+          </div>
+        </el-card>
+      </div>
+      
       <!-- 语音设置 -->
       <div class="speech-settings">
         <!-- 语音选择 -->
@@ -167,6 +191,9 @@ const isMobile = ref(false)
 const suggestions = ref([])
 const fallbackMessage = ref('')
 const isReloading = ref(false)
+const isHuawei = ref(false)
+const needsActivation = ref(false)
+const isActivating = ref(false)
 
 // 计算属性
 const currentBook = computed(() => epubStore.currentBook)
@@ -190,6 +217,8 @@ const initSpeech = () => {
   
   isSupported.value = status.isSupported
   isMobile.value = speechManager.isMobile
+  isHuawei.value = speechManager.isHuawei
+  needsActivation.value = speechManager.isHuawei && !isSupported.value
   
   if (isSupported.value) {
     console.log('语音功能可用')
@@ -476,28 +505,156 @@ const reloadVoices = async () => {
     isReloading.value = false
   }
 }
+
+// 激活华为语音功能
+const activateHuaweiSpeech = async () => {
+  isActivating.value = true
+  
+  try {
+    console.log('手动激活华为设备语音功能...')
+    
+    // 创建一个用户手势触发的语音utterance
+    if (window.speechSynthesis) {
+      const utterance = new SpeechSynthesisUtterance('语音功能正在激活')
+      utterance.volume = 0.1
+      utterance.rate = 2
+      
+      // 监听语音事件
+      utterance.onstart = () => {
+        console.log('华为语音引擎已激活')
+      }
+      
+      utterance.onend = async () => {
+        console.log('激活语音完成，重新检测语音列表...')
+        
+        // 等待一段时间让语音引擎完全激活
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+        // 重新加载语音
+        speechManager.forceReloadVoices()
+        
+        // 等待语音列表加载
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        // 重新初始化
+        initSpeech()
+        
+        // 检查是否成功
+        const status = speechManager.getStatus()
+        if (status.isSupported && status.voiceCount > 0) {
+          ElMessage.success('华为设备语音功能已成功激活！')
+          needsActivation.value = false
+        } else {
+          ElMessage.warning('语音激活可能需要更多时间，请稍后重试')
+        }
+      }
+      
+      utterance.onerror = (error) => {
+        console.warn('华为语音激活出错:', error)
+        ElMessage.warning('语音激活遇到问题，请检查设备语音设置')
+      }
+      
+      // 播放激活语音
+      window.speechSynthesis.speak(utterance)
+      
+      ElMessage.info('正在激活华为设备语音功能，请等待...')
+      
+    } else {
+      ElMessage.error('设备不支持语音合成功能')
+    }
+    
+  } catch (error) {
+    console.error('激活华为语音失败:', error)
+    ElMessage.error('语音激活失败，请检查设备设置')
+  } finally {
+    // 延迟重置激活状态
+    setTimeout(() => {
+      isActivating.value = false
+    }, 3000)
+  }
+}
 </script>
 
 <style lang="scss" scoped>
 .speech-control {
   padding: 16px;
   
+  .dark-theme & {
+    background-color: #1a1a1a;
+    
+    // Element Plus组件深色模式适配
+    :deep(.el-alert) {
+      background-color: #2d2d2d;
+      border-color: #4c4d4f;
+      color: #e0e0e0;
+      
+      &.el-alert--warning {
+        background-color: #3d2b1f;
+        border-color: #936d38;
+        color: #e6c46a;
+      }
+      
+      &.el-alert--info {
+        background-color: #1f2e3d;
+        border-color: #4a6583;
+        color: #79bbff;
+      }
+    }
+    
+    :deep(.el-button) {
+      &:not(.el-button--primary) {
+        background-color: #2d2d2d;
+        border-color: #4c4d4f;
+        color: #e0e0e0;
+        
+        &:hover {
+          background-color: #3a3a3a;
+          border-color: #79bbff;
+        }
+        
+        &:disabled {
+          background-color: #1a1a1a;
+          border-color: #2a2a2a;
+          color: #666;
+        }
+      }
+    }
+    
+    :deep(.el-card) {
+      background-color: #2d2d2d;
+      border-color: #4c4d4f;
+      color: #e0e0e0;
+      
+      .el-card__header {
+        background-color: #2a2a2a;
+        border-bottom-color: #4c4d4f;
+      }
+    }
+    
+    :deep(.el-progress) {
+      .el-progress__text {
+        color: #e0e0e0;
+      }
+    }
+  }
+  
   .speech-panel {
     .control-buttons {
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       text-align: center;
     }
     
     .speech-settings {
       .el-form-item {
-        margin-bottom: 16px;
+        margin-bottom: 12px;
         
         :deep(.el-form-item__label) {
           font-weight: 500;
           color: #303133;
-          width: 100px;
+          width: 80px;
           text-align: right;
-          padding-right: 8px;
+          padding-right: 6px;
+          font-size: 13px;
           
           .dark-theme & {
             color: #e0e0e0;
@@ -505,7 +662,68 @@ const reloadVoices = async () => {
         }
         
         :deep(.el-form-item__content) {
-          margin-left: 110px;
+          margin-left: 90px;
+        }
+        
+        // 深色模式下的Element Plus组件样式
+        .dark-theme & {
+          :deep(.el-select) {
+            .el-input__wrapper {
+              background-color: #2d2d2d;
+              border-color: #4c4d4f;
+              
+              &:hover {
+                border-color: #79bbff;
+              }
+              
+              &.is-focus {
+                border-color: #409eff;
+              }
+              
+              .el-input__inner {
+                color: #e0e0e0;
+              }
+            }
+          }
+          
+          :deep(.el-slider) {
+            .el-slider__runway {
+              background-color: #4c4d4f;
+            }
+            
+            .el-slider__bar {
+              background-color: #409eff;
+            }
+            
+            .el-slider__button {
+              background-color: #409eff;
+              border-color: #409eff;
+            }
+          }
+          
+          :deep(.el-checkbox) {
+            .el-checkbox__input {
+              .el-checkbox__inner {
+                background-color: #2d2d2d;
+                border-color: #4c4d4f;
+                
+                &:hover {
+                  border-color: #79bbff;
+                }
+              }
+              
+              &.is-checked {
+                .el-checkbox__inner {
+                  background-color: #409eff;
+                  border-color: #409eff;
+                }
+              }
+            }
+            
+            .el-checkbox__label {
+              color: #e0e0e0;
+            }
+          }
         }
       }
       
@@ -513,30 +731,30 @@ const reloadVoices = async () => {
       .volume-control {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 8px;
         width: 100%;
         
         .speech-slider {
           flex: 1;
-          min-width: 200px;
-          max-width: 300px;
-          margin: 0 8px;
+          min-width: 150px;
+          max-width: 250px;
+          margin: 0 4px;
           
           :deep(.el-slider__runway) {
-            height: 6px;
+            height: 5px;
           }
           
           :deep(.el-slider__button) {
-            width: 18px;
-            height: 18px;
+            width: 16px;
+            height: 16px;
           }
         }
         
         .rate-value,
         .volume-value {
-          min-width: 50px;
+          min-width: 45px;
           text-align: center;
-          font-size: 14px;
+          font-size: 13px;
           color: #666;
           flex-shrink: 0;
           
@@ -857,6 +1075,62 @@ const reloadVoices = async () => {
   margin-bottom: 16px;
 }
 
+.huawei-activation-tip {
+  margin-bottom: 16px;
+}
+
+.activation-card {
+  border: 2px solid #409eff;
+  
+  .dark-theme & {
+    background-color: #2d2d2d;
+    border-color: #409eff;
+  }
+}
+
+.activation-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #409eff;
+  
+  .activation-icon {
+    font-size: 18px;
+  }
+}
+
+.activation-content {
+  text-align: center;
+  
+  p {
+    margin: 12px 0;
+    color: #606266;
+    
+    .dark-theme & {
+      color: #c0c4cc;
+    }
+  }
+  
+  .activation-button {
+    margin: 16px 0;
+    min-height: 44px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  
+  .activation-note {
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.4;
+    
+    .dark-theme & {
+      color: #909399;
+    }
+  }
+}
+
 /* 深色主题 */
 .dark-theme .mobile-suggestions {
   background-color: #2d2d2d;
@@ -874,40 +1148,49 @@ const reloadVoices = async () => {
 // 桌面端优化
 @media (min-width: 769px) {
   .speech-control {
+    padding: 12px;
+    
+    &.dark-theme {
+      background-color: #1a1a1a;
+    }
+    
     .speech-panel {
       .speech-settings {
-        max-width: 500px;
+        max-width: 450px;
         
         .el-form-item {
+          margin-bottom: 10px;
+          
           :deep(.el-form-item__label) {
-            width: 100px;
+            width: 80px;
             text-align: right;
-            padding-right: 8px;
+            padding-right: 6px;
+            font-size: 13px;
           }
           
           :deep(.el-form-item__content) {
-            margin-left: 110px;
+            margin-left: 90px;
           }
         }
         
         .rate-control,
         .volume-control {
-          max-width: 350px;
+          max-width: 320px;
           
           .speech-slider {
-            min-width: 220px;
-            max-width: 280px;
+            min-width: 180px;
+            max-width: 230px;
           }
         }
         
         .el-select {
-          max-width: 350px;
+          max-width: 320px;
         }
         
         .el-checkbox {
           :deep(.el-checkbox__label) {
-            font-size: 14px;
-            line-height: 1.5;
+            font-size: 13px;
+            line-height: 1.4;
           }
         }
       }

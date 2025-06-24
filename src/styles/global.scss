@@ -74,4 +74,77 @@ body {
 // 响应式断点
 $mobile: 768px;
 $tablet: 1024px;
-$desktop: 1200px; 
+$desktop: 1200px;
+
+// Element Plus 深色模式全局样式
+.dark-theme {
+  // 下拉菜单
+  .el-select-dropdown {
+    background-color: #2d2d2d !important;
+    border-color: #4c4d4f !important;
+    
+    .el-select-dropdown__item {
+      color: #e0e0e0 !important;
+      
+      &:hover {
+        background-color: #3a3a3a !important;
+      }
+      
+      &.selected {
+        background-color: #409eff !important;
+        color: #fff !important;
+      }
+    }
+  }
+  
+  // 弹出层背景
+  .el-overlay {
+    background-color: rgba(0, 0, 0, 0.6) !important;
+  }
+  
+  // Loading组件
+  .el-loading-mask {
+    background-color: rgba(26, 26, 26, 0.8) !important;
+    
+    .el-loading-spinner {
+      .path {
+        stroke: #409eff !important;
+      }
+      
+      .el-loading-text {
+        color: #e0e0e0 !important;
+      }
+    }
+  }
+  
+  // Message组件
+  .el-message {
+    background-color: #2d2d2d !important;
+    border-color: #4c4d4f !important;
+    color: #e0e0e0 !important;
+    
+    &.el-message--success {
+      background-color: #1f4d20 !important;
+      border-color: #4a8e4f !important;
+      color: #67c23a !important;
+    }
+    
+    &.el-message--warning {
+      background-color: #3d2b1f !important;
+      border-color: #936d38 !important;
+      color: #e6a23c !important;
+    }
+    
+    &.el-message--info {
+      background-color: #1f2e3d !important;
+      border-color: #4a6583 !important;
+      color: #909399 !important;
+    }
+    
+    &.el-message--error {
+      background-color: #4d1f20 !important;
+      border-color: #8e4f4f !important;
+      color: #f56c6c !important;
+    }
+  }
+} 
